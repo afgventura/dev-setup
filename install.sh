@@ -68,6 +68,7 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
     else cp "$REPO/pi/$f" "$HOME/.pi/agent/$f"; fi
   done
   link "$REPO/pi/extensions/loop.ts" "$HOME/.pi/agent/extensions/loop.ts"
+  link "$REPO/pi/extensions/tmux-window-name" "$HOME/.pi/agent/extensions/tmux-window-name"
   echo "   pi packages install on first run from settings.json → packages"
 fi
 

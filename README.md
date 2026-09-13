@@ -107,6 +107,10 @@ pi/                       pi coding agent: settings, models (context window), MC
 `pi/settings.json` lists the packages pi installs on first run
 (`cc-my-pi`, `pi-mcp-adapter`, `pi-tmux-window-name`, ralph loop, …).
 `pi/extensions/loop.ts` adds `/loop <interval> <prompt>` like Claude Code's.
+`pi/extensions/tmux-window-name/` is a vendored copy of `pi-tmux-window-name`
+(auto-names the tmux tab from the first prompt; `/rename`) with two fixes: it
+sends the `x-opencode-session` header opencode-go requires, and keeps reasoning
+minimal so thinking models return a parseable name.
 `pi/models.json` caps deepseek-v4.1-flash at a 500k window (of its nominal 1M) so
 auto-compaction and the ctx meter both work off 500k — cost isn't the constraint
 at $0.003/M cached input; long-context quality and latency are.
