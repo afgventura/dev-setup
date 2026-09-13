@@ -5,7 +5,8 @@
     "npm:pi-mcp-adapter",
     "npm:pi-context-view",
     "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:pi-tmux-window-name"
+    "npm:pi-tmux-window-name",
+    "npm:pi-goal-x"
   ],
   "theme": "light",
   "defaultProvider": "opencode-go",
