@@ -1,0 +1,19 @@
+{
+  "packages": [
+    "npm:@lnilluv/pi-ralph-loop",
+    "npm:cc-my-pi",
+    "npm:pi-mcp-adapter",
+    "npm:pi-context-view",
+    "npm:@juicesharp/rpiv-ask-user-question",
+    "npm:pi-tmux-window-name"
+  ],
+  "theme": "light",
+  "defaultProvider": "opencode-go",
+  "defaultModel": "deepseek-v4.1-flash",
+  "hideThinkingBlock": true,
+  "quietStartup": true,
+  "defaultThinkingLevel": "high",
+  "modelThinkingLevels": {
+    "opencode-go/deepseek-v4.1-flash": "high"
+  }
+}

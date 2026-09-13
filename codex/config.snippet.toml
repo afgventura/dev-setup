@@ -1,0 +1,9 @@
+# Appended to ~/.codex/config.toml by install.sh (idempotent).
+
+# macOS notification when a turn completes (click → jumps to the tab)
+notify = ["~/.config/tmux/agent-notify.sh", "codex"]
+
+# Share the one Chrome MCP native server over HTTP instead of spawning a
+# stdio bridge per Codex session.
+[mcp_servers.chrome-mcp]
+url = "http://127.0.0.1:12306/mcp"

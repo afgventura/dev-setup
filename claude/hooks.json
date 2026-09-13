@@ -1,0 +1,4 @@
+{
+  "Stop":         [{ "hooks": [{ "type": "command", "command": "~/.config/tmux/agent-notify.sh" }] }],
+  "Notification": [{ "hooks": [{ "type": "command", "command": "~/.config/tmux/agent-notify.sh" }] }]
+}

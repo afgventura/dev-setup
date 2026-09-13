@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "halo_platform": {
+      "url": "https://www.haloai.co.id/api/mcp?scope=all",
+      "auth": "bearer",
+      "bearerTokenEnv": "HALO_PLATFORM_MCP_TOKEN",
+      "lifecycle": "lazy"
+    },
+    "cloudsql-haloai": {
+      "url": "https://mcp.haloai.co.id/mcp/haloai",
+      "auth": "bearer",
+      "bearerTokenEnv": "CLOUDSQL_MCP_TOKEN",
+      "lifecycle": "lazy"
+    },
+    "cloudsql-entity": {
+      "url": "https://mcp.haloai.co.id/mcp/entity",
+      "auth": "bearer",
+      "bearerTokenEnv": "CLOUDSQL_MCP_TOKEN",
+      "lifecycle": "lazy"
+    },
+    "axiom": {
+      "url": "https://mcp.axiom.co/mcp",
+      "auth": "oauth",
+      "lifecycle": "lazy"
+    },
+    "slack-local": {
+      "url": "http://127.0.0.1:13080/mcp",
+      "auth": "bearer",
+      "bearerTokenEnv": "SLACK_MCP_API_KEY",
+      "lifecycle": "lazy"
+    },
+    "chrome-mcp": {
+      "url": "http://127.0.0.1:12306/mcp",
+      "lifecycle": "lazy"
+    },
+    "apify": {
+      "disabled": true
+    }
+  }
+}

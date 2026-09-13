@@ -1,0 +1,51 @@
+font-family = JetBrains Mono
+font-size = 11
+font-thicken = true
+theme = light:GitHub Light Default,dark:GitHub Dark Default
+
+window-decoration = true
+window-save-state = never
+macos-titlebar-style = transparent
+macos-titlebar-proxy-icon = hidden
+bell-features = no-title,attention
+macos-non-native-fullscreen = visible-menu
+
+unfocused-split-opacity = 0.85
+unfocused-split-fill = #000000
+confirm-close-surface = false
+
+keybind = super+enter=toggle_fullscreen
+
+# ── tmux is the tab manager ─────────────────────────────────────────
+# Every Ghostty window attaches to the shared tmux session "main"
+# (created on demand). Ghostty's own tabs are not used; the ⌘ shortcuts
+# below send tmux prefix (C-b = \x02) sequences defined in ~/.tmux.conf.
+
+# tabs
+keybind = super+t=text:\x02c
+keybind = super+w=text:\x02x
+keybind = super+s=text:\x02s
+keybind = super+r=text:\x02r
+keybind = super+shift+left_bracket=text:\x02p
+keybind = super+shift+right_bracket=text:\x02n
+keybind = super+one=text:\x021
+keybind = super+two=text:\x022
+keybind = super+three=text:\x023
+keybind = super+four=text:\x024
+keybind = super+five=text:\x025
+keybind = super+six=text:\x026
+keybind = super+seven=text:\x027
+keybind = super+eight=text:\x028
+keybind = super+nine=text:\x029
+
+# splits
+keybind = super+d=text:\x02|
+keybind = super+shift+d=text:\x02-
+keybind = super+alt+left=text:\x02h
+keybind = super+alt+down=text:\x02j
+keybind = super+alt+up=text:\x02k
+keybind = super+alt+right=text:\x02l
+
+# misc
+keybind = shift+enter=text:\x1b[13;2u
+keybind = super+shift+k=text:\x02K
