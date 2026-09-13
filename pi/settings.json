@@ -15,5 +15,10 @@
   "defaultThinkingLevel": "high",
   "modelThinkingLevels": {
     "opencode-go/deepseek-v4.1-flash": "high"
+  },
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 500000,
+    "keepRecentTokens": 60000
   }
 }
