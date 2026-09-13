@@ -12,6 +12,13 @@ import UserNotifications
 
 let queue = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent(".local/state/agent-notifier/queue")
+let logURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".local/state/agent-notifier/agent-notifier.log")
+func log(_ msg: String) {
+    let line = "\(Date()) \(msg)\n"
+    if let h = try? FileHandle(forWritingTo: logURL) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); h.closeFile() }
+    else { try? line.write(to: logURL, atomically: true, encoding: .utf8) }
+}
 
 final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     var lastActivity = Date()
@@ -19,7 +26,11 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
     func applicationDidFinishLaunching(_ note: Notification) {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        log("launched from \(Bundle.main.bundlePath) id=\(Bundle.main.bundleIdentifier ?? "nil")")
+        center.requestAuthorization(options: [.alert, .sound]) { ok, err in
+            log("authorization granted=\(ok) error=\(err.map { "\($0)" } ?? "none")")
+            center.getNotificationSettings { st in log("authorizationStatus=\(st.authorizationStatus.rawValue) alert=\(st.alertSetting.rawValue)") }
+        }
         try? FileManager.default.createDirectory(at: queue, withIntermediateDirectories: true)
         Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in self.drain() }
         Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
@@ -42,7 +53,9 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
             // same id per tab → a newer notification replaces the older one
             let id = req["id"] ?? UUID().uuidString
             content.threadIdentifier = id
-            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil)) { err in
+                log("posted id=\(id) title=\(content.title) error=\(err.map { "\($0)" } ?? "none")")
+            }
             lastActivity = Date()
         }
     }
@@ -50,6 +63,7 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
     // banner clicked
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler done: @escaping () -> Void) {
+        log("clicked id=\(response.notification.request.identifier)")
         if let cmd = response.notification.request.content.userInfo["exec"] as? String, !cmd.isEmpty {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/bin/bash")
