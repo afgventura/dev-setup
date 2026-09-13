@@ -62,7 +62,7 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
   mkdir -p "$HOME/.pi/agent/extensions"
   # settings/mcp are copied (pi rewrites them); extension is linked
-  for f in settings.json mcp.json; do
+  for f in settings.json mcp.json models.json; do
     if [ -f "$HOME/.pi/agent/$f" ]; then
       jq -s '.[0] * .[1]' "$HOME/.pi/agent/$f" "$REPO/pi/$f" > "$HOME/.pi/agent/$f.tmp" && mv "$HOME/.pi/agent/$f.tmp" "$HOME/.pi/agent/$f"
     else cp "$REPO/pi/$f" "$HOME/.pi/agent/$f"; fi

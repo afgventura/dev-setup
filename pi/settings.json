@@ -18,7 +18,7 @@
   },
   "compaction": {
     "enabled": true,
-    "reserveTokens": 500000,
+    "reserveTokens": 16384,
     "keepRecentTokens": 60000
   }
 }

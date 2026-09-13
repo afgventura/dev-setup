@@ -89,7 +89,7 @@ tmux/clicktest.py         injects real mouse bytes to test sidebar clicks
 agent-notifier/           Swift source + build script for the notifier app
 claude/hooks.json         hook entries merged into ~/.claude/settings.json
 codex/config.snippet.toml notify hook + shared Chrome MCP over HTTP
-pi/                       pi coding agent: settings, MCP servers, /loop extension
+pi/                       pi coding agent: settings, models (context window), MCP servers, /loop extension
 ```
 
 ## Tuning
@@ -107,6 +107,9 @@ pi/                       pi coding agent: settings, MCP servers, /loop extensio
 `pi/settings.json` lists the packages pi installs on first run
 (`cc-my-pi`, `pi-mcp-adapter`, `pi-tmux-window-name`, ralph loop, …).
 `pi/extensions/loop.ts` adds `/loop <interval> <prompt>` like Claude Code's.
+`pi/models.json` caps deepseek-v4.1-flash at a 500k window (of its nominal 1M) so
+auto-compaction and the ctx meter both work off 500k — cost isn't the constraint
+at $0.003/M cached input; long-context quality and latency are.
 Skills are provided by those packages, not vendored here.
 
 ## Testing after a change

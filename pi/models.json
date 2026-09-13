@@ -1,0 +1,11 @@
+{
+  "providers": {
+    "opencode-go": {
+      "modelOverrides": {
+        "deepseek-v4.1-flash": {
+          "contextWindow": 500000
+        }
+      }
+    }
+  }
+}
