@@ -8,6 +8,8 @@ window-save-state = never
 macos-titlebar-style = transparent
 macos-titlebar-proxy-icon = hidden
 bell-features = no-title,attention
+# agents' own OSC 9/777 notifications would duplicate Agent Notifier's banners
+desktop-notifications = false
 macos-non-native-fullscreen = visible-menu
 
 unfocused-split-opacity = 0.85

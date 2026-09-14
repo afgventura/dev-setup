@@ -14,7 +14,7 @@ export LC_ALL=en_US.UTF-8   # printf pads by characters, not bytes
 unset TMUX
 exec 2>/dev/null   # never let a stray error reach tmux/fzf output
 W=${SIDEBAR_WIDTH:-51}
-PAD=$((W - 5))          # "  " indent + marker + " " + name, one col spare
+PAD=$((W - 7))          # fzf left margin 2 + "  " indent + marker + " " + name, one col spare
 DIM=$'\e[2m'; RST=$'\e[0m'
 
 

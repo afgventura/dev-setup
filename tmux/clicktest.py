@@ -23,7 +23,7 @@ def main():
             pass
     time.sleep(1.0); drain()
     for r in rows:
-        y = r + 1  # terminal rows are 1-based and row 1 is the TABS header
+        y = r + 2  # terminal rows are 1-based; row 1 is the top margin, row 2 the TABS header
         os.write(fd, f"\x1b[<0;5;{y}M\x1b[<0;5;{y}m".encode())
         time.sleep(0.7); drain()
         active = subprocess.run([TMUX, "display", "-t", "main", "-p", "#I #W"],

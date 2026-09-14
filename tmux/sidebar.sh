@@ -19,7 +19,7 @@ while :; do
     --listen="$SOCK" \
     --no-input --layout=reverse --no-info --no-separator --no-scrollbar \
     --delimiter='\t' --with-nth=2 \
-    --pointer='' --marker='' --header='  TABS' --header-first \
+    --pointer='' --marker='' --header='  TABS' --header-first --margin=1,0,0,2 \
     --color='fg:-1,bg:-1,fg+:#ffffff:bold,bg+:#0969da,hl:-1,hl+:#ffffff,header:8,gutter:-1' \
     --no-mouse --cycle --no-clear --ansi \
     --bind "load:transform($HOME/.config/tmux/sidebar-pos.sh)" \
