@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+exec 2>/dev/null   # any output or non-zero exit makes tmux pop a "returned N" view in the user's pane
 unset TMUX   # always address the default ("main") server, not the outer ui one
 # Called from tmux hooks in ~/.tmux.conf: tells the sidebar fzf to reload
 # its list and move the cursor to the active tab. No-op if no sidebar.
@@ -21,7 +22,8 @@ SETTLE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.settle"
 
 touch "$DIRTY"
 # a lock left behind by a killed run must not wedge the sidebar forever
-if [ -d "$LOCK" ] && [ $(( $(date +%s) - $(stat -f %m "$LOCK") )) -gt 5 ]; then rmdir "$LOCK" 2>/dev/null; fi
+age=$(( $(date +%s) - $(stat -f %m "$LOCK" 2>/dev/null || echo 0) ))   # `|| echo 0` if it vanished under us
+if [ -d "$LOCK" ] && [ "$age" -gt 5 ]; then rmdir "$LOCK" 2>/dev/null; fi
 while :; do
   mkdir "$LOCK" 2>/dev/null || exit 0        # someone else is refreshing; they'll see the flag
   # tmux applies automatic-rename on a short timer; one deferred pass catches
@@ -30,6 +32,6 @@ while :; do
     ( sleep 0.8; rmdir "$SETTLE" 2>/dev/null; exec "$0" settle ) &
   fi
   while [ -e "$DIRTY" ]; do rm -f "$DIRTY"; refresh; sleep 0.1; done   # ≤10 reloads/s during a storm
-  rmdir "$LOCK"
+  rmdir "$LOCK" 2>/dev/null
   [ -e "$DIRTY" ] || exit 0                  # flag set between the loop and the unlock → go again
 done
