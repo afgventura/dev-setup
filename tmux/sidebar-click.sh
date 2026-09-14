@@ -4,9 +4,12 @@
 # first field is the target: "@id" = tab in main, "" = group header (no-op).
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 unset TMUX
+exec 2>/dev/null   # never let a stray error reach tmux/fzf output
 y=${1:-0}
 [ "$y" -ge 1 ] 2>/dev/null || exit 0
-target=$("$HOME/.config/tmux/sidebar-list.sh" | sed -n "${y}p" | cut -f1)
+CACHE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.rows"   # what the sidebar is showing right now
+[ -s "$CACHE" ] || "$HOME/.config/tmux/sidebar-list.sh" > "$CACHE"
+target=$(sed -n "${y}p" "$CACHE" | cut -f1)
 case "$target" in
   @*) for c in $(tmux list-clients -F '#{client_tty}'); do tmux switch-client -c "$c" -t "main:$target"; done ;;
   *)  exit 0 ;;

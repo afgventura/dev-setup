@@ -9,12 +9,13 @@ unset TMUX   # always address the default ("main") server, not the outer ui one
 
 SOCK="${TMPDIR:-/tmp}/tmux-sidebar-$UID.sock"
 LIST="$HOME/.config/tmux/sidebar-list.sh"
+CACHE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.rows"   # rows currently shown; refresh/pos/click read it
 
 rm -f "$SOCK"
 while :; do
   # If main is gone, wait for it to come back.
   if ! tmux has-session -t main 2>/dev/null; then sleep 1; continue; fi
-  eval "$LIST" | fzf \
+  "$LIST" | tee "$CACHE" | fzf \
     --listen="$SOCK" \
     --no-input --layout=reverse --no-info --no-separator --no-scrollbar \
     --delimiter='\t' --with-nth=2 \

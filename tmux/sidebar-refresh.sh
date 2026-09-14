@@ -13,10 +13,16 @@ unset TMUX   # always address the default ("main") server, not the outer ui one
 SOCK="${TMPDIR:-/tmp}/tmux-sidebar-$UID.sock"
 [ -S "$SOCK" ] || exit 0
 LIST="$HOME/.config/tmux/sidebar-list.sh"
+CACHE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.rows"     # last rows sent to fzf (sidebar-pos.sh reads it too)
 LOCK="${TMPDIR:-/tmp}/tmux-sidebar-$UID.lock"
 DIRTY="${TMPDIR:-/tmp}/tmux-sidebar-$UID.dirty"
 # cursor placement happens in fzf's own `load` handler (sidebar-pos.sh)
-refresh() { curl -s --max-time 2 --unix-socket "$SOCK" -X POST http://localhost/ -d "reload-sync($LIST)" >/dev/null 2>&1; }
+refresh() {  # only bother fzf when the rows actually changed
+  local new; new=$("$LIST")
+  [ "$new" = "$(cat "$CACHE" 2>/dev/null)" ] && return 0
+  printf '%s\n' "$new" > "$CACHE.tmp" && mv -f "$CACHE.tmp" "$CACHE"
+  curl -s --max-time 2 --unix-socket "$SOCK" -X POST http://localhost/ -d "reload-sync(cat $CACHE)" >/dev/null 2>&1
+}
 
 SETTLE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.settle"
 

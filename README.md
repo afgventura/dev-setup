@@ -70,6 +70,10 @@ itself; `main` lives on.
 source of truth for the sidebar, its click handler and its cursor position.
 Sidebar updates are event-driven: hooks in `tmux.conf` call
 `sidebar-refresh.sh`, which POSTs a `reload-sync` to fzf over a unix socket.
+Hooks fire in bursts (every agent's title spinner), so the refresh is
+coalesced (lock + dirty flag), skipped when the rows didn't change, and every
+hook is wrapped in `>/dev/null 2>&1 || true` — tmux would otherwise pop a
+failing hook's output over the active pane.
 Clicks are handled by tmux (`MouseDown1Pane` → `sidebar-click.sh`), never by
 fzf, so keyboard focus can't land in the sidebar.
 
@@ -101,8 +105,7 @@ pi/                       pi coding agent: settings, models (context window), MC
 ## Tuning
 
 - Sidebar width: `SIDEBAR_WIDTH` in `tmux/ghostty-ui.sh`, the `-x` in
-  `tmux/ui.conf`, and the `p48/=48` pad in `sidebar.sh` + `sidebar-refresh.sh`
-  (pad = width − 3).
+  `tmux/ui.conf`, and the default `W` in `sidebar-list.sh`.
 - Active-row colour: `bg+:#0969da` in `sidebar.sh`.
 - MCP tokens for pi are read from env vars named in `pi/mcp.json`
   (`bearerTokenEnv`) — keep secrets in the Keychain and export them from your
