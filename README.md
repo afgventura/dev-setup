@@ -17,9 +17,12 @@ A lightweight terminal workspace for running many AI coding agents
 
 - **Ghostty** as the window (native, ~100 MB for everything) with **tmux** owning
   the sessions — close Ghostty, reopen it, every agent is still running.
-- A **left sidebar** listing tabs, clickable; names follow the agent's own
-  terminal title (Claude Code sets one per task, so tabs relabel themselves).
-  `▶` = active, `•` = new output since you last looked.
+- A **left sidebar** listing tabs, clickable, **grouped by project folder**
+  (`haloai-1`, `govisa`, …); names follow the agent's own terminal title
+  (Claude Code sets one per task, so tabs relabel themselves).
+  `▶` = active, `•` = new output since you last looked. Other tmux sessions on
+  the server (e.g. orchestrator worker sessions) appear under **workers** —
+  click one to peek at it, click any tab to come back.
 - **⌘ shortcuts** that feel like a normal Mac app — no tmux prefix to learn.
 - **Native macOS notifications** when an agent finishes or needs input;
   clicking one jumps to that tab.
@@ -64,6 +67,8 @@ It has no prefix, so every `C-b …` sequence Ghostty's ⌘ keybinds emit passes
 straight through to `main`. When the last Ghostty client detaches, `ui` kills
 itself; `main` lives on.
 
+`sidebar-list.sh` produces the rows (target + display) and is the single
+source of truth for the sidebar, its click handler and its cursor position.
 Sidebar updates are event-driven: hooks in `tmux.conf` call
 `sidebar-refresh.sh`, which POSTs a `reload-sync` to fzf over a unix socket.
 Clicks are handled by tmux (`MouseDown1Pane` → `sidebar-click.sh`), never by
@@ -73,7 +78,9 @@ fzf, so keyboard focus can't land in the sidebar.
 `notify` hook. It drops a JSON request into `~/.local/state/agent-notifier/queue`;
 `Agent Notifier.app` (tiny Swift app, `agent-notifier/`) posts the banner and,
 on click, runs `tmux select-window` + brings Ghostty forward. Suppressed when
-Ghostty is frontmost and that tab is already active.
+Ghostty is frontmost and that tab is already active, and for agents running in
+sessions other than `main` (orchestrator workers — their orchestrator sweeps
+them; you'd have no tab to jump to).
 
 ## Layout
 
@@ -82,7 +89,7 @@ ghostty/config            font, theme, ⌘ keybinds (→ tmux prefix sequences)
 tmux/tmux.conf            main server: bindings, title→tab-name rule, hooks
 tmux/ui.conf              outer chrome: sidebar pane, mouse, focus rules
 tmux/ghostty-ui.sh        Ghostty's `command`: builds the layout, attaches
-tmux/sidebar*.sh          the sidebar and its refresh/click/position helpers
+tmux/sidebar*.sh          the sidebar: list (grouping), refresh, click, cursor helpers
 tmux/agent-notify.sh      notification hook (Claude Code + Codex)
 tmux/selftest.sh          acceptance test (quits/relaunches Ghostty, ~25 s)
 tmux/clicktest.py         injects real mouse bytes to test sidebar clicks

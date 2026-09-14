@@ -24,9 +24,12 @@ fi
 # one line, bounded, and no ';' / control chars (OSC field separators)
 msg=$(printf '%s' "$msg" | tr '\n\r;' '  ,' | tr -d '\000-\037' | cut -c1-160)
 
-tab=""; win=""; active=0
+tab=""; win=""; active=0; sess=""
 if [ -n "${TMUX_PANE:-}" ]; then
-  read -r win tab active < <(TMUX= "$TMUX_BIN" display -t "$TMUX_PANE" -p '#{window_id} #{window_name} #{window_active}' 2>/dev/null)
+  read -r sess win tab active < <(TMUX= "$TMUX_BIN" display -t "$TMUX_PANE" -p '#{session_name} #{window_id} #{window_name} #{window_active}' 2>/dev/null)
+  # agents in other sessions (orchestrator workers) are swept by their
+  # orchestrator, not by you — no banner, there is no tab to jump to
+  [ -n "$sess" ] && [ "$sess" != main ] && exit 0
 fi
 tab=$(printf '%s' "${tab:-$(basename "$PWD")}" | tr -d ';')
 

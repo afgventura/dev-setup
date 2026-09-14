@@ -8,8 +8,7 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 unset TMUX   # always address the default ("main") server, not the outer ui one
 
 SOCK="${TMPDIR:-/tmp}/tmux-sidebar-$UID.sock"
-# shellcheck disable=SC2016
-LIST='tmux list-windows -t main -F "#{window_index}	#{?window_active,▶,#{?window_activity_flag,•, }} #{p48:#{=48:window_name}}" 2>/dev/null'
+LIST="$HOME/.config/tmux/sidebar-list.sh"
 
 rm -f "$SOCK"
 while :; do
@@ -21,7 +20,7 @@ while :; do
     --delimiter='\t' --with-nth=2 \
     --pointer='' --marker='' --header='  TABS' --header-first \
     --color='fg:-1,bg:-1,fg+:#ffffff:bold,bg+:#0969da,hl:-1,hl+:#ffffff,header:8,gutter:-1' \
-    --no-mouse --cycle --no-clear \
+    --no-mouse --cycle --no-clear --ansi \
     --bind "load:transform($HOME/.config/tmux/sidebar-pos.sh)" \
     >/dev/null
   sleep 0.2

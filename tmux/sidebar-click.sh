@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Outer-tmux mouse handler: a left click at row $1 of the sidebar pane
-# switches "main" to the tab on that row. Row 0 is the "TABS" header.
+# Outer-tmux mouse handler: a left click at row $1 of the sidebar pane.
+# Row 0 is the "TABS" header; other rows come from sidebar-list.sh, whose
+# first field is the target: "@id" = tab in main, "sess:NAME" = another
+# session to peek at, "" = group header (no-op).
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 unset TMUX
 y=${1:-0}
 [ "$y" -ge 1 ] 2>/dev/null || exit 0
-idx=$(tmux list-windows -t main -F '#{window_index}' 2>/dev/null | sed -n "${y}p")
-[ -n "$idx" ] || exit 0
-tmux select-window -t "main:$idx"
+target=$("$HOME/.config/tmux/sidebar-list.sh" | sed -n "${y}p" | cut -f1)
+[ -n "$target" ] || exit 0
+case "$target" in
+  @*)     for c in $(tmux list-clients -F '#{client_tty}'); do tmux switch-client -c "$c" -t "main:$target"; done ;;
+  sess:*) for c in $(tmux list-clients -F '#{client_tty}'); do tmux switch-client -c "$c" -t "${target#sess:}"; done ;;
+esac
+"$HOME/.config/tmux/sidebar-refresh.sh"   # switch-client fires no select-window hook
