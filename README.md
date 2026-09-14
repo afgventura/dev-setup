@@ -20,9 +20,8 @@ A lightweight terminal workspace for running many AI coding agents
 - A **left sidebar** listing tabs, clickable, **grouped by project folder**
   (`haloai-1`, `govisa`, …); names follow the agent's own terminal title
   (Claude Code sets one per task, so tabs relabel themselves).
-  `▶` = active, `•` = new output since you last looked. Other tmux sessions on
-  the server (e.g. orchestrator worker sessions) appear under **workers** —
-  click one to peek at it, click any tab to come back.
+  `▶` = active, `•` = new output since you last looked. Only the `main`
+  session is listed — orchestrator worker sessions stay out of sight.
 - **⌘ shortcuts** that feel like a normal Mac app — no tmux prefix to learn.
 - **Native macOS notifications** when an agent finishes or needs input;
   clicking one jumps to that tab.
