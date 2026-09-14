@@ -24,13 +24,14 @@ fi
 # one line, bounded, and no ';' / control chars (OSC field separators)
 msg=$(printf '%s' "$msg" | tr '\n\r;' '  ,' | tr -d '\000-\037' | cut -c1-160)
 
+# Only agents in a tab of the "main" session get a banner. Orchestrator
+# workers run in other sessions (and, since they are launched with TMUX unset,
+# can't even be resolved to one) — they are swept by their orchestrator, not by
+# you, and there is no tab to jump to.
 tab=""; win=""; active=0; sess=""
-if [ -n "${TMUX_PANE:-}" ]; then
-  read -r sess win tab active < <(TMUX= "$TMUX_BIN" display -t "$TMUX_PANE" -p '#{session_name} #{window_id} #{window_name} #{window_active}' 2>/dev/null)
-  # agents in other sessions (orchestrator workers) are swept by their
-  # orchestrator, not by you — no banner, there is no tab to jump to
-  [ -n "$sess" ] && [ "$sess" != main ] && exit 0
-fi
+[ -n "${TMUX_PANE:-}" ] || exit 0
+read -r sess win tab active < <(TMUX= "$TMUX_BIN" display -t "$TMUX_PANE" -p '#{session_name} #{window_id} #{window_name} #{window_active}' 2>/dev/null)
+[ "$sess" = main ] || exit 0
 tab=$(printf '%s' "${tab:-$(basename "$PWD")}" | tr -d ';')
 
 front=$(osascript -e 'tell application "System Events" to get bundle identifier of first process whose frontmost is true' 2>/dev/null)
