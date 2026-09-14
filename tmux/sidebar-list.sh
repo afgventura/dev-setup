@@ -14,7 +14,7 @@ export LC_ALL=en_US.UTF-8   # printf pads by characters, not bytes
 unset TMUX
 exec 2>/dev/null   # never let a stray error reach tmux/fzf output
 W=${SIDEBAR_WIDTH:-51}
-PAD=$((W - 9))          # fzf left margin 4 + "  " indent + marker + " " + name, one col spare
+PAD=$((W - 7))          # fzf left margin 2 + "  " indent + marker + " " + name, one col spare
 DIM=$'\e[2m'; RST=$'\e[0m'
 
 # This runs up to ten times a second while agents animate their titles, so no
@@ -44,6 +44,7 @@ while IFS=$'\t' read -r id idx active act path name; do
 done < <(tmux list-windows -t main -F $'#{window_id}\t#{window_index}\t#{window_active}\t#{window_activity_flag}\t#{pane_current_path}\t#{window_name}' 2>/dev/null) |
 sort -t$'\t' -s -k1,1 -k2,2 |
 while IFS=$'\t' read -r g idx target display; do
-  [[ $g == "$prev" ]] || { printf '\t%s%s%s\n' "$DIM" "$g" "$RST"; prev=$g; }
+  # blank row between groups (empty target = not clickable)
+  [[ $g == "$prev" ]] || { [[ -z $prev ]] || printf '\t\n'; printf '\t%s%s%s\n' "$DIM" "$g" "$RST"; prev=$g; }
   printf '%s\t%s\n' "$target" "$display"
 done

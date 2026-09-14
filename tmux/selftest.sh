@@ -29,10 +29,10 @@ sleep 1; SB=$(tabs_listed); EXP=$N1; [ "$SB" -eq "$EXP" ] && pass "sidebar lists
 $T -L ui capture-pane -p -t ui:.0 | grep -qE "^[^ ]" && pass "group headers present" || fail "no group headers"
 $T -L ui send-keys -t ui:.1 C-b 1; sleep 0.5; A=$($T display -t main -p '#I'); [ "$A" = 1 ] && pass "⌘1 → tab 1" || fail "⌘1 → $A"
 $T -L ui send-keys -t ui:.1 C-b 2; sleep 0.5; A=$($T display -t main -p '#I'); [ "$A" = 2 ] && pass "⌘2 → tab 2" || fail "⌘2 → $A"
-sleep 0.8; ROW=$($T -L ui capture-pane -p -t ui:.0 | grep -n "▶" | cut -d: -f1); EXP=$(( $(row "$($T display -t main -p '#{window_id}')") + 2 )); [ "$ROW" = "$EXP" ] && pass "▶ tracks active tab" || fail "▶ on line $ROW, expected $EXP"
-R=$(row "$NEWID"); $T -L ui run-shell "~/.config/tmux/sidebar-click.sh $((R+1))"; sleep 0.8; A=$($T display -t main -p '#I'); [ "$A" = "$NEW" ] && pass "click row $R → tab $NEW" || fail "click row $R → $A"
+sleep 0.8; ROW=$($T -L ui capture-pane -p -t ui:.0 | grep -n "▶" | cut -d: -f1); EXP=$(( $(row "$($T display -t main -p '#{window_id}')") + 4 )); [ "$ROW" = "$EXP" ] && pass "▶ tracks active tab" || fail "▶ on line $ROW, expected $EXP"
+R=$(row "$NEWID"); $T -L ui run-shell "~/.config/tmux/sidebar-click.sh $((R+3))"; sleep 0.8; A=$($T display -t main -p '#I'); [ "$A" = "$NEW" ] && pass "click row $R → tab $NEW" || fail "click row $R → $A"
 FP=$($T -L ui display -p '#{pane_index}'); [ "$FP" = 1 ] && pass "focus stays on main pane" || fail "focus on pane $FP"
-$T -L ui run-shell "~/.config/tmux/sidebar-click.sh 2"; sleep 0.3; A=$($T display -t main -p '#I'); [ "$A" = "$NEW" ] && pass "click group header → no-op" || fail "click group header → $A"
+$T -L ui run-shell "~/.config/tmux/sidebar-click.sh 4"; sleep 0.3; A=$($T display -t main -p '#I'); [ "$A" = "$NEW" ] && pass "click group header → no-op" || fail "click group header → $A"
 $T -L ui select-pane -t ui:.0; sleep 0.4; FP=$($T -L ui display -p '#{pane_index}'); [ "$FP" = 1 ] && pass "sidebar focus bounces back" || fail "focus stuck on pane $FP"
 [ "$($T display -t main -p '#I')" = "$NEW" ] && [ "$($T display -t "main:$NEW" -p '#{pane_current_command}')" = zsh ] || { fail "scratch tab not active/bare — skipping input tests"; NEW=""; }
 [ -n "$NEW" ] && { $T -L ui send-keys -t ui:.1 'echo typed-ok' Enter; sleep 2; $T capture-pane -p -t "main:$NEW" | grep -q typed-ok && pass "typing reaches main shell" || fail "typing lost"; }

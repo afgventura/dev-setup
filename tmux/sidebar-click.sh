@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Outer-tmux mouse handler: a left click at row $1 of the sidebar pane.
-# Row 0 is fzf's top margin, row 1 the "TABS" header; other rows come from sidebar-list.sh, whose
+# Screen rows 0-1 are fzf's top margin, 2-3 the "TABS" header (+ blank line);
+# the rest come from sidebar-list.sh, whose
 # first field is the target: "@id" = tab in main, "" = group header (no-op).
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 unset TMUX
 exec 2>/dev/null   # never let a stray error reach tmux/fzf output
-y=$(( ${1:-0} - 1 ))   # screen row → list row (margin + header above)
+y=$(( ${1:-0} - 3 ))   # screen row → list row (2 margin + 2 header rows above)
 [ "$y" -ge 1 ] 2>/dev/null || exit 0
 CACHE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.rows"   # what the sidebar is showing right now
 [ -s "$CACHE" ] || "$HOME/.config/tmux/sidebar-list.sh" > "$CACHE"
