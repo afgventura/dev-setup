@@ -48,7 +48,7 @@ Codex snippet, and copies the pi config. Re-run after `git pull`.
 |---|---|
 | ⌘T / ⌘W | new tab / close tab |
 | ⌘1–9 | jump to tab |
-| ⌘⇧[ / ⌘⇧] | previous / next tab |
+| ⌘⇧[ / ⌘⇧] | previous / next tab (in sidebar order) |
 | ⌘S | full-screen tab picker (Esc closes) |
 | ⌘R | rename tab (sticks until closed) |
 | ⌘D / ⌘⇧D | split right / down |
