@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Outer-tmux mouse handler: a left click at row $1 of the sidebar pane.
 # Screen rows 0-1 are fzf's top margin, 2-3 the "TABS" header (+ blank line);
-# the rest come from sidebar-list.sh, whose
+# then each list row takes two screen rows (item, then a --gap line).
+# List rows come from sidebar-list.sh, whose
 # first field is the target: "@id" = tab in main, "" = group header (no-op).
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 unset TMUX
 exec 2>/dev/null   # never let a stray error reach tmux/fzf output
-y=$(( ${1:-0} - 3 ))   # screen row → list row (2 margin + 2 header rows above)
-[ "$y" -ge 1 ] 2>/dev/null || exit 0
+y=$(( ${1:-0} - 4 ))   # screen row → offset below the header
+[ "$y" -ge 0 ] 2>/dev/null || exit 0
+[ $(( y % 2 )) -eq 0 ] || exit 0          # clicked a gap line
+y=$(( y / 2 + 1 ))                        # list row
 CACHE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.rows"   # what the sidebar is showing right now
 [ -s "$CACHE" ] || "$HOME/.config/tmux/sidebar-list.sh" > "$CACHE"
 target=$(sed -n "${y}p" "$CACHE" | cut -f1)
