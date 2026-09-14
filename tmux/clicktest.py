@@ -5,7 +5,12 @@ screen. Usage: clicktest.py ROW [ROW ...]   (sidebar rows, 1 = first tab)"""
 import fcntl, os, pty, struct, subprocess, sys, termios, time
 
 TMUX = "/opt/homebrew/bin/tmux"
-COLS, ROWS = 255, 72
+# match the real client's size so attaching here never resizes the user's view
+def _size():
+    out = subprocess.run([TMUX, "-L", "ui", "display", "-p", "#{client_width} #{client_height}"],
+                         capture_output=True, text=True).stdout.split()
+    return (int(out[0]), int(out[1])) if len(out) == 2 else (255, 72)
+COLS, ROWS = _size()
 
 def main():
     rows = [int(a) for a in sys.argv[1:]] or [1]
@@ -40,6 +45,7 @@ def main():
     time.sleep(0.3)
     try: os.kill(pid, 15)
     except ProcessLookupError: pass
+    subprocess.run([TMUX, "-L", "ui", "refresh-client"], capture_output=True)  # full redraw for the real client
 
 def _tty(pid):
     out = subprocess.run(["ps", "-o", "tty=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
