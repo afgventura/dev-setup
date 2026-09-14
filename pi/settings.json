@@ -5,7 +5,8 @@
     "npm:pi-mcp-adapter",
     "npm:pi-context-view",
     "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:pi-goal-x"
+    "npm:pi-goal-x",
+    "npm:@tintinweb/pi-subagents"
   ],
   "theme": "light",
   "defaultProvider": "opencode-go",

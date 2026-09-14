@@ -116,7 +116,7 @@ pi/                       pi coding agent: settings, models (context window), MC
 ## pi
 
 `pi/settings.json` lists the packages pi installs on first run
-(`cc-my-pi`, `pi-mcp-adapter`, `pi-tmux-window-name`, ralph loop, …).
+(`cc-my-pi`, `pi-mcp-adapter`, `pi-subagents` — required by cc-my-pi's `TaskExecute`, ralph loop, …).
 `pi/extensions/loop.ts` adds `/loop <interval> <prompt>` like Claude Code's.
 `pi/extensions/tmux-window-name/` is a vendored copy of `pi-tmux-window-name`
 (auto-names the tmux tab from the first prompt; `/rename`) with two fixes: it
