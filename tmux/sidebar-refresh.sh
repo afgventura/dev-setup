@@ -37,7 +37,7 @@ while :; do
   if [ "${1:-}" != settle ] && mkdir "$SETTLE" 2>/dev/null; then
     ( sleep 0.8; rmdir "$SETTLE" 2>/dev/null; exec "$0" settle ) &
   fi
-  while [ -e "$DIRTY" ]; do rm -f "$DIRTY"; refresh; sleep 0.1; done   # ≤10 reloads/s during a storm
+  while [ -e "$DIRTY" ]; do rm -f "$DIRTY"; refresh; sleep 0.2; done   # ≤5 reloads/s during a storm
   rmdir "$LOCK" 2>/dev/null
   [ -e "$DIRTY" ] || exit 0                  # flag set between the loop and the unlock → go again
 done
