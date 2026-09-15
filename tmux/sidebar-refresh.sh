@@ -14,22 +14,34 @@ SOCK="${TMPDIR:-/tmp}/tmux-sidebar-$UID.sock"
 [ -S "$SOCK" ] || exit 0
 LIST="$HOME/.config/tmux/sidebar-list.sh"
 CACHE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.rows"     # last rows sent to fzf (sidebar-pos.sh reads it too)
+POS="${TMPDIR:-/tmp}/tmux-sidebar-$UID.pos"        # "pos(N)" for the active tab in $CACHE (fzf's load handler cats it)
 LOCK="${TMPDIR:-/tmp}/tmux-sidebar-$UID.lock"
 DIRTY="${TMPDIR:-/tmp}/tmux-sidebar-$UID.dirty"
-# cursor placement happens in fzf's own `load` handler (sidebar-pos.sh)
 refresh() {  # only bother fzf when the rows actually changed
-  local new; new=$("$LIST")
-  [ "$new" = "$(cat "$CACHE" 2>/dev/null)" ] && return 0
+  local new n=0 i=0 line
+  new=$("$LIST")
+  [ "$new" = "$(<"$CACHE")" ] && return 0
+  # cursor row = the line whose target is the active window (marker "▶" in the
+  # display column). Computed here, in bash, so fzf can be told the position in
+  # the same request as the reload instead of shelling out again on `load`.
+  while IFS= read -r line; do
+    i=$((i + 1))
+    case "$line" in *$'\t  ▶ '*) n=$i; break ;; esac
+  done <<< "$new"
+  [ "$n" -gt 0 ] || n=1
   printf '%s\n' "$new" > "$CACHE.tmp" && mv -f "$CACHE.tmp" "$CACHE"
-  curl -s --max-time 2 --unix-socket "$SOCK" -X POST http://localhost/ -d "reload-sync(cat $CACHE)" >/dev/null 2>&1
+  printf 'pos(%d)\n' "$n" > "$POS"
+  curl -s --max-time 2 --unix-socket "$SOCK" -X POST http://localhost/ -d "reload-sync(cat $CACHE)+pos($n)" >/dev/null 2>&1
 }
 
 SETTLE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.settle"
 
 touch "$DIRTY"
 # a lock left behind by a killed run must not wedge the sidebar forever
-age=$(( $(date +%s) - $(stat -f %m "$LOCK" 2>/dev/null || echo 0) ))   # `|| echo 0` if it vanished under us
-if [ -d "$LOCK" ] && [ "$age" -gt 5 ]; then rmdir "$LOCK" 2>/dev/null; fi
+if [ -d "$LOCK" ]; then
+  age=$(( EPOCHSECONDS - $(stat -f %m "$LOCK" || echo "$EPOCHSECONDS") ))   # fallback if it vanished under us
+  [ "$age" -gt 5 ] && rmdir "$LOCK" 2>/dev/null
+fi
 while :; do
   mkdir "$LOCK" 2>/dev/null || exit 0        # someone else is refreshing; they'll see the flag
   # tmux applies automatic-rename on a short timer; one deferred pass catches
@@ -37,7 +49,10 @@ while :; do
   if [ "${1:-}" != settle ] && mkdir "$SETTLE" 2>/dev/null; then
     ( sleep 0.8; rmdir "$SETTLE" 2>/dev/null; exec "$0" settle ) &
   fi
-  while [ -e "$DIRTY" ]; do rm -f "$DIRTY"; refresh; sleep 0.2; done   # ≤5 reloads/s during a storm
+  while [ -e "$DIRTY" ]; do
+    rm -f "$DIRTY"; refresh
+    [ -e "$DIRTY" ] && sleep 0.1   # flag set again while we reloaded → a storm; throttle to ≤10/s
+  done
   rmdir "$LOCK" 2>/dev/null
   [ -e "$DIRTY" ] || exit 0                  # flag set between the loop and the unlock → go again
 done
