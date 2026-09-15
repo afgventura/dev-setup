@@ -1,4 +1,5 @@
 import { completeSimple, type UserMessage } from "@earendil-works/pi-ai";
+import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -379,6 +380,32 @@ export default function tmuxWindowNameExtension(pi: ExtensionAPI) {
     await renameCurrentTmuxWindow(pi, names.windowName, targetWindow);
     hasNameForSession = true;
     hasAttemptedNameForSession = true;
+    // remote-pi (phone app) shows agents by their mesh name, which defaults
+    // to the folder name — give it the same title as the tab
+    if (pi.getCommands().some((c) => c.name === "remote-pi rename")) {
+      runSlashCommand(`/remote-pi rename ${names.windowName}`);
+    }
+  };
+
+  // Run a slash command exactly as if the user typed it: through the live
+  // editor's submit path. (pi.sendUserMessage always starts a model turn,
+  // even for a bare command, which produced a spurious extra reply.)
+  let liveEditor: any;
+  pi.on("session_start", async (_event, ctx) => {
+    const previous = ctx.ui.getEditorComponent();
+    ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+      const ed: any = previous ? previous(tui, theme, keybindings) : new CustomEditor(tui, theme, keybindings);
+      liveEditor = ed;
+      return ed;
+    });
+  });
+  const runSlashCommand = (command: string) => {
+    if (!liveEditor?.setText || !liveEditor?.handleInput) return false;
+    const saved: string = liveEditor.getText?.() ?? "";
+    liveEditor.setText(command);
+    liveEditor.handleInput("\r");
+    if (saved) liveEditor.setText(saved);
+    return true;
   };
 
   const runRename = async (
