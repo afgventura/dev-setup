@@ -132,6 +132,11 @@ minimal so thinking models return a parseable name.
 `pi/models.json` caps deepseek-v4.1-flash at a 500k window (of its nominal 1M) so
 auto-compaction and the ctx meter both work off 500k — cost isn't the constraint
 at $0.003/M cached input; long-context quality and latency are.
+`enabledModels` scopes the catalogue to exact `provider/model` entries
+(deepseek-v4.1-flash on opencode-go, the GPT models on openai-codex). Without
+it a bare model name like `gpt-5.6-luna` — which AGENTS.md tells subagents to
+use — resolved to opencode-go's copy and was billed there instead of to the
+ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
 Skills are provided by those packages, not vendored here.
 
 ## Testing after a change
