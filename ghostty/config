@@ -50,5 +50,7 @@ keybind = super+alt+right=text:\x02l
 
 # misc
 keybind = shift+enter=text:\x1b[13;2u
+keybind = alt+enter=text:\x1b\r
+keybind = alt+up=text:\x1b[1;3A
 keybind = super+shift+k=text:\x02K
 keybind = super+shift+u=text:\x02u
