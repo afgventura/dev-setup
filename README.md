@@ -118,6 +118,12 @@ pi/                       pi coding agent: settings, models (context window), MC
 `pi/settings.json` lists the packages pi installs on first run
 (`cc-my-pi`, `pi-mcp-adapter`, `pi-subagents` — required by cc-my-pi's `TaskExecute`, ralph loop, …).
 `pi/extensions/loop.ts` adds `/loop <interval> <prompt>` like Claude Code's.
+`pi/extensions/tasks.ts` adds Claude Code's background-task model: tools
+`background_run` (detached command, agent is woken with the output when it
+exits), `watch` (poll a command until its output matches a regex / exits 0,
+then wake the agent), `task_output`, `task_stop`; `/tasks` and
+`/watch [every 30s] [until <regex>] <cmd>` for humans. Logs live in
+`~/.pi/agent/tasks/`.
 `pi/extensions/tmux-window-name/` is a vendored copy of `pi-tmux-window-name`
 (auto-names the tmux tab from the first prompt; `/rename`) with two fixes: it
 sends the `x-opencode-session` header opencode-go requires, and keeps reasoning
