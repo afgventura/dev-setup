@@ -113,6 +113,6 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
 }
 
 output "relay_url" {
-  description = "Use as wss://<host> in /remote-pi and the mobile app"
-  value       = replace(google_cloud_run_v2_service.relay.uri, "https://", "wss://")
+  description = "Paste as https://… in `/remote-pi relay url` and in the app settings"
+  value       = google_cloud_run_v2_service.relay.uri
 }

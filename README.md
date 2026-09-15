@@ -154,7 +154,7 @@ it a bare model name like `gpt-5.6-luna` — which AGENTS.md tells subagents to
 use — resolved to opencode-go's copy and was billed there instead of to the
 ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
 `remote-pi` is the remote control (iOS app "Remote Pi"): `/remote-pi` in the
-session you want to drive → custom relay `wss://remote-pi-relay-….a.run.app`
+session you want to drive → `/remote-pi relay url https://remote-pi-relay-….a.run.app`
 (our own, see `infra/remote-pi-relay/`) → scan the QR with the app. Peers are
 paired with Ed25519 keys kept in `~/.pi/remote/` and the phone Keychain.
 Skills are provided by those packages, not vendored here.
