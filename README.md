@@ -152,6 +152,9 @@ check at startup (~0.8 s); run `pi update` yourself now and then.
 it a bare model name like `gpt-5.6-luna` — which AGENTS.md tells subagents to
 use — resolved to opencode-go's copy and was billed there instead of to the
 ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
+`pi-telegram` is the remote control: `/telegram-setup` (paste a BotFather
+token; it goes to `~/.pi/agent/telegram.json`, not this repo), `/telegram-connect`
+in the session you want to drive, then `/start` in the bot DM from your phone.
 Skills are provided by those packages, not vendored here.
 
 ## Testing after a change

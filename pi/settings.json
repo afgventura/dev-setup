@@ -6,7 +6,8 @@
     "npm:pi-context-view",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:pi-goal-x",
-    "npm:@tintinweb/pi-subagents"
+    "npm:@tintinweb/pi-subagents",
+    "npm:@llblab/pi-telegram"
   ],
   "theme": "light",
   "defaultProvider": "opencode-go",
