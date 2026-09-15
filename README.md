@@ -118,7 +118,11 @@ pi/                       pi coding agent: settings, models (context window), MC
 
 `pi/settings.json` lists the packages pi installs on first run
 (`cc-my-pi`, `pi-mcp-adapter`, `pi-subagents` — required by cc-my-pi's `TaskExecute`, ralph loop, …).
-`pi/extensions/loop.ts` adds `/loop <interval> <prompt>` like Claude Code's.
+`pi/extensions/loop.ts` adds `/loop [interval] <prompt>` like Claude Code's:
+with an interval it fires on a fixed schedule; without one it is a self-paced
+loop where the agent picks each delay by calling `schedule_wakeup` (also
+exposed as tools `loop_start` / `loop_stop`, so the agent can start a loop
+itself instead of asking you to).
 `pi/extensions/tasks.ts` adds Claude Code's background-task model: tools
 `background_run` (detached command, agent is woken with the output when it
 exits), `watch` (poll a command until its output matches a regex / exits 0,
