@@ -479,6 +479,13 @@ export default function tmuxWindowNameExtension(pi: ExtensionAPI) {
     await renameCurrentTmuxWindow(pi, windowName, targetWindow);
     hasNameForSession = true;
     hasAttemptedNameForSession = true;
+    // remote-pi keeps one agent_name per folder, so a resumed session would
+    // otherwise come up under whatever name the last session in this folder
+    // set. Re-apply this session's title once remote-pi has joined the mesh
+    // (its auto-start runs from its own session_start handler).
+    if (pi.getCommands().some((c) => c.name === "remote-pi rename")) {
+      setTimeout(() => runSlashCommand(`/remote-pi rename ${windowName}`), 3000);
+    }
   };
 
   const renameFromBranch = async (args: string, ctx: ExtensionCommandContext) => {
