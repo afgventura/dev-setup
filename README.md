@@ -157,6 +157,10 @@ ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
 session you want to drive → `/remote-pi relay url https://remote-pi-relay-….a.run.app`
 (our own, see `infra/remote-pi-relay/`) → scan the QR with the app. Peers are
 paired with Ed25519 keys kept in `~/.pi/remote/` and the phone Keychain.
+`~/.pi/settings.json` has `claudeHeaderEnabled: false` — cc-my-pi's startup
+banner instantiates every extension a second time (a throwaway loader just to
+count them), which left remote-pi bound to a dead API and broke `/remote-pi pair`;
+it also costs startup time.
 Skills are provided by those packages, not vendored here.
 
 ## Testing after a change
