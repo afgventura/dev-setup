@@ -133,7 +133,8 @@ then wake the agent), `task_output`, `task_stop`; `/tasks` and
 anywhere in the text, Claude Code style (`per /repo-safety and /testing, …`);
 pi's own `/skill:name` only works as the first word and takes one skill. The
 SKILL.md bodies go into context as one collapsed `📚 loaded skills` message
-and the prompt stays exactly as typed.
+and the prompt stays exactly as typed. Typing `/` anywhere in the line pops
+the skill picker (Tab/Enter inserts the name).
 `pi/extensions/tmux-window-name/` is a vendored copy of `pi-tmux-window-name`
 (auto-names the tmux tab from the first prompt; `/rename`) with two fixes: it
 sends the `x-opencode-session` header opencode-go requires, and keeps reasoning

@@ -11,6 +11,9 @@
  * mention). Words that are not a skill name are left alone, so `/tmp/x` or
  * `a/b` are safe. A message that is only `/skill:name …` is left to pi's own
  * command handling.
+ *
+ * It also adds the picker: typing `/` anywhere (not just at the start) pops
+ * the skill list, filtered as you type; Tab/Enter inserts `/name `.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -18,7 +21,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadSkills, loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Editor, Text, type AutocompleteItem, type AutocompleteProvider } from "@earendil-works/pi-tui";
 
 const AGENT_DIR = join(homedir(), ".pi", "agent");
 
@@ -98,6 +101,69 @@ export default function (pi: ExtensionAPI) {
 		);
 		rewritten = text; // unchanged
 		return { action: "transform", text: rewritten };
+	});
+
+	// ── "/" picker anywhere in the line ──────────────────────────────
+	const MID = /(^|\s)\/([a-z0-9-]*)$/; // "/partial" token right before the cursor
+	const items = (prefix: string): AutocompleteItem[] =>
+		[...byName.keys()]
+			.filter((n) => n.startsWith(prefix))
+			.sort()
+			.map((n) => ({ value: `/${n}`, label: `/${n}`, description: "skill" }));
+
+	const wrap = (inner: AutocompleteProvider, cwd: string): AutocompleteProvider => ({
+		triggerCharacters: [...new Set([...(inner.triggerCharacters ?? ["@", "#"]), "/"])],
+		async getSuggestions(lines, cursorLine, cursorCol, options) {
+			const before = (lines[cursorLine] ?? "").slice(0, cursorCol);
+			const m = MID.exec(before);
+			// at line start pi's own slash-command completion owns it
+			if (m && !(cursorLine === 0 && before.trimStart() === before.slice(before.length - m[0].length + m[1].length))) {
+				refresh(cwd);
+				const list = items(m[2]);
+				if (list.length) return { items: list, prefix: `/${m[2]}` };
+				return null;
+			}
+			// a mid-line "/something/else" is a path, not a skill: keep pi's old
+			// behaviour (no popup) rather than fuzzy file matches
+			if (!options.force && /(^|\s)\/\S*$/.test(before) && before.trimStart() !== before.slice(before.lastIndexOf("/"))) return null;
+			return inner.getSuggestions(lines, cursorLine, cursorCol, options);
+		},
+		applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+			if (item.description === "skill" && prefix.startsWith("/")) {
+				const line = lines[cursorLine] ?? "";
+				const start = cursorCol - prefix.length;
+				const out = [...lines];
+				out[cursorLine] = line.slice(0, start) + item.value + " " + line.slice(cursorCol);
+				return { lines: out, cursorLine, cursorCol: start + item.value.length + 1 };
+			}
+			return inner.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+		},
+		shouldTriggerFileCompletion: inner.shouldTriggerFileCompletion?.bind(inner),
+	});
+
+	// pi-tui refuses "/" as an auto-trigger character (it reserves it for
+	// line-start slash commands), so the popup would only ever open on Tab.
+	// Let the editor treat a mid-line "/" after whitespace like "@": rebuild
+	// its trigger set and patterns with "/" included.
+	const proto = Editor.prototype as any;
+	if (!proto.__skillsInlinePatched) {
+		proto.__skillsInlinePatched = true;
+		const orig = proto.setAutocompleteTriggerCharacters;
+		const esc = (v: string) => v.replace(/[\\^$.*+?()[\]{}|-]/g, "\\$&");
+		proto.setAutocompleteTriggerCharacters = function (chars: string[]) {
+			orig.call(this, chars);
+			if (!chars.includes("/")) return;
+			const next: string[] = [...this.autocompleteTriggerCharacters, "/"];
+			this.autocompleteTriggerCharacters = next;
+			this.autocompleteTriggerPattern = new RegExp(`(?:^|[\\s])[${next.map(esc).join("")}][^\\s]*$`);
+			const noAt = next.filter((c) => c !== "@").map(esc);
+			this.autocompleteDebouncePattern = new RegExp(`(?:^|[ \\t])(?:@(?:"[^"]*|[^\\s]*)|[${noAt.join("")}][^\\s]*)$`);
+		};
+	}
+
+	pi.on("session_start", async (_event, ctx) => {
+		refresh(ctx.cwd);
+		ctx.ui.addAutocompleteProvider((current) => wrap(current, ctx.cwd));
 	});
 
 	pi.registerMessageRenderer("skill-load", (message, options, theme) => {
