@@ -125,6 +125,11 @@ exits), `watch` (poll a command until its output matches a regex / exits 0,
 then wake the agent), `task_output`, `task_stop`; `/tasks` and
 `/watch [every 30s] [until <regex>] <cmd>` for humans. Logs live in
 `~/.pi/agent/tasks/`.
+`pi/extensions/skills-inline.ts` lets a prompt reference any number of skills
+anywhere in the text, Claude Code style (`per /repo-safety and /testing, …`);
+pi's own `/skill:name` only works as the first word and takes one skill. The
+SKILL.md bodies go into context as one collapsed `📚 loaded skills` message
+and the prompt stays exactly as typed.
 `pi/extensions/tmux-window-name/` is a vendored copy of `pi-tmux-window-name`
 (auto-names the tmux tab from the first prompt; `/rename`) with two fixes: it
 sends the `x-opencode-session` header opencode-go requires, and keeps reasoning
