@@ -102,7 +102,8 @@ tmux/clicktest.py         injects real mouse bytes to test sidebar clicks
 agent-notifier/           Swift source + build script for the notifier app
 claude/hooks.json         hook entries merged into ~/.claude/settings.json
 codex/config.snippet.toml notify hook + shared Chrome MCP over HTTP
-pi/                       pi coding agent: settings, models (context window), MCP servers, /loop extension
+pi/                       pi coding agent: settings, models (context window), MCP servers, extensions
+infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 ```
 
 ## Tuning
@@ -152,9 +153,10 @@ check at startup (~0.8 s); run `pi update` yourself now and then.
 it a bare model name like `gpt-5.6-luna` — which AGENTS.md tells subagents to
 use — resolved to opencode-go's copy and was billed there instead of to the
 ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
-`pi-telegram` is the remote control: `/telegram-setup` (paste a BotFather
-token; it goes to `~/.pi/agent/telegram.json`, not this repo), `/telegram-connect`
-in the session you want to drive, then `/start` in the bot DM from your phone.
+`remote-pi` is the remote control (iOS app "Remote Pi"): `/remote-pi` in the
+session you want to drive → custom relay `wss://remote-pi-relay-….a.run.app`
+(our own, see `infra/remote-pi-relay/`) → scan the QR with the app. Peers are
+paired with Ed25519 keys kept in `~/.pi/remote/` and the phone Keychain.
 Skills are provided by those packages, not vendored here.
 
 ## Testing after a change

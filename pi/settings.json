@@ -7,7 +7,7 @@
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:pi-goal-x",
     "npm:@tintinweb/pi-subagents",
-    "npm:@llblab/pi-telegram"
+    "npm:remote-pi"
   ],
   "theme": "light",
   "defaultProvider": "opencode-go",
