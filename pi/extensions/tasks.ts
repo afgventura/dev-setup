@@ -23,6 +23,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 
 type Task = {
 	id: string;
@@ -81,7 +82,7 @@ export default function (pi: ExtensionAPI) {
 					`log: ${task.log}\n` +
 					(body ? `\n--- output (last ${TAIL_LINES} lines) ---\n${body}\n` : "\n(no output)\n"),
 				display: true,
-				details: { id: task.id, status: task.status, exitCode: task.exitCode ?? null },
+				details: { id: task.id, status: task.status, exitCode: task.exitCode ?? null, title, command: task.command, output: body, ms: (task.ended ?? Date.now()) - task.started },
 			},
 			ctx.isIdle() ? { triggerTurn: true } : { triggerTurn: true, deliverAs: "followUp" },
 		);
@@ -181,6 +182,22 @@ export default function (pi: ExtensionAPI) {
 			.map((t) => `${t.id}  ${t.status.padEnd(8)} ${fmtDuration((t.ended ?? Date.now()) - t.started).padStart(6)}  ${t.command.slice(0, 80)}`)
 			.join("\n");
 	}
+
+	// What the human sees: a compact card (title, command, last few lines);
+	// ctrl+o expands to the full tail. The LLM still receives the full content.
+	pi.registerMessageRenderer("task-notification", (message, options, theme) => {
+		const d = (message.details ?? {}) as { title?: string; command?: string; output?: string; status?: string; id?: string; ms?: number };
+		const ok = d.status === "done" || d.status === "matched";
+		const icon = ok ? "✓" : d.status === "running" ? "⧗" : "✗";
+		const head = theme.fg(ok ? "success" : "error", `${icon} `) + theme.fg("accent", d.title ?? "task notification");
+		const cmd = (d.command ?? "").replace(/\s+/g, " ");
+		const lines = (d.output ?? "").split("\n").filter((l) => l.trim() !== "");
+		const shown = options.expanded ? lines : lines.slice(-8);
+		let text = head + "\n" + theme.fg("dim", `  $ ${cmd.length > 140 && !options.expanded ? cmd.slice(0, 137) + "…" : cmd}`);
+		if (shown.length) text += "\n" + shown.map((l) => theme.fg("dim", "  │ ") + l).join("\n");
+		if (!options.expanded && lines.length > shown.length) text += "\n" + theme.fg("dim", `  … ${lines.length - shown.length} more lines · ctrl+o to expand`);
+		return new Text(text, options.outputPad, 0);
+	});
 
 	pi.registerTool({
 		name: "background_run",
