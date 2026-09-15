@@ -58,7 +58,7 @@ Codex snippet, and copies the pi config. Re-run after `git pull`.
 | ⌥Enter | pi: queue the message until the current turn ends (Enter while busy = steer it in mid-turn); ⌥↑ pulls a queued message back |
 | ⌘⇧U | pick & open a URL from the current tab |
 | ⇧⌘-click | open a link under the mouse (tmux owns plain clicks, so Ghostty needs ⇧) |
-| mouse | click a sidebar row to switch; scroll; drag split borders |
+| mouse | click a sidebar row to switch; scroll; drag to select + copy (also inside Codex); drag split borders |
 
 ## How it works
 
