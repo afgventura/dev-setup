@@ -1,0 +1,28 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+		121212121212121212121212 = {isa = PBXProject; buildConfigurationList = 131313131313131313131313; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; mainGroup = 888888888888888888888888; productRefGroup = 999999999999999999999999; projectDirPath = ""; projectRoot = ""; targets = (AAAAAAAABBBBBBBBCCCCCCCC); };
+		111111111111111111111111 /* RemoteAgentApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentApp.swift; sourceTree = "<group>"; };
+		222222222222222222222222 /* AgentModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModel.swift; sourceTree = "<group>"; };
+		333333333333333333333333 /* RemoteAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = RemoteAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		444444444444444444444444 = {isa = PBXBuildFile; fileRef = 111111111111111111111111; };
+		555555555555555555555555 = {isa = PBXBuildFile; fileRef = 222222222222222222222222; };
+		666666666666666666666666 = {isa = PBXGroup; children = (111111111111111111111111, 222222222222222222222222); path = Sources/RemoteAgent; sourceTree = "<group>"; };
+		777777777777777777777777 = {isa = PBXGroup; children = (666666666666666666666666); sourceTree = "<group>"; };
+		888888888888888888888888 = {isa = PBXGroup; children = (777777777777777777777777, 999999999999999999999999); sourceTree = "<group>"; };
+		999999999999999999999999 = {isa = PBXGroup; children = (333333333333333333333333); name = Products; sourceTree = "<group>"; };
+		AAAAAAAABBBBBBBBCCCCCCCC = {isa = PBXNativeTarget; buildConfigurationList = DDDDDDDDDDDDDDDDDDDDDDDD; buildPhases = (BBBBBBBBBBBBBBBBBBBBBBBB, CCCCCCCCCCCCCCCCCCCCCCCC); buildRules = (); dependencies = (); name = RemoteAgent; productName = RemoteAgent; productReference = 333333333333333333333333; productType = "com.apple.product-type.application"; };
+		BBBBBBBBBBBBBBBBBBBBBBBB = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (444444444444444444444444, 555555555555555555555555); runOnlyForDeploymentPostprocessing = 0; };
+		CCCCCCCCCCCCCCCCCCCCCCCC = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		DDDDDDDDDDDDDDDDDDDDDDDD = {isa = XCConfigurationList; buildConfigurations = (EEEEEEEEEEEEEEEEEEEEEEEE, FFFFFFFFFFFFFFFFFFFFFFFF); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		EEEEEEEEEEEEEEEEEEEEEEEE = {isa = XCBuildConfiguration; buildSettings = { PRODUCT_BUNDLE_IDENTIFIER = com.haloai.remoteagent; PRODUCT_NAME = RemoteAgent; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; INFOPLIST_FILE = Sources/RemoteAgent/Info.plist; }; name = Debug; };
+		FFFFFFFFFFFFFFFFFFFFFFFF = {isa = XCBuildConfiguration; buildSettings = { PRODUCT_BUNDLE_IDENTIFIER = com.haloai.remoteagent; PRODUCT_NAME = RemoteAgent; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; INFOPLIST_FILE = Sources/RemoteAgent/Info.plist; }; name = Release; };
+		141414141414141414141414 = {isa = XCBuildConfiguration; buildSettings = {LastUpgradeCheck = 1660;}; name = Debug;};
+		151515151515151515151515 = {isa = XCBuildConfiguration; buildSettings = {}; name = Release;};
+		131313131313131313131313 = {isa = XCConfigurationList; buildConfigurations = (141414141414141414141414, 151515151515151515151515); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+	};
+	rootObject = 121212121212121212121212;
+}
