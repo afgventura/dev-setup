@@ -20,6 +20,11 @@ DIRTY="${TMPDIR:-/tmp}/tmux-sidebar-$UID.dirty"
 refresh() {  # only bother fzf when the rows actually changed
   local new n=0 i=0 line
   new=$("$LIST")
+  # An empty list means `tmux list-windows` failed (server busy/locked for a
+  # moment), not that there are no tabs. Publishing it blanked the sidebar
+  # and broke next/prev (they navigate the cached rows) until the next real
+  # change. Retry once, then keep what we have.
+  if [ -z "$new" ]; then sleep 0.1; new=$("$LIST"); [ -n "$new" ] || return 0; fi
   [ "$new" = "$(<"$CACHE")" ] && return 0
   # cursor row = the line whose target is the active window (marker "▶" in the
   # display column). Computed here, in bash, so fzf can be told the position in

@@ -6,11 +6,14 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 exec 2>/dev/null
 unset TMUX
 CACHE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.rows"
-[ -s "$CACHE" ] || "$HOME/.config/tmux/sidebar-list.sh" > "$CACHE"
 cur=$(tmux display -t main -p '#{window_id}')
 # targets only (skip group headers), in display order
-ids=$(cut -f1 "$CACHE" | grep '^@')
-[ -n "$ids" ] || exit 0
+ids=$(cut -f1 "$CACHE" 2>/dev/null | grep '^@')
+if [ -z "$ids" ]; then   # cache missing/blank: rebuild it rather than do nothing
+  "$HOME/.config/tmux/sidebar-list.sh" > "$CACHE"
+  ids=$(cut -f1 "$CACHE" | grep '^@')
+  [ -n "$ids" ] || exit 0
+fi
 n=$(printf '%s\n' "$ids" | grep -n -x -F -- "$cur" | head -1 | cut -d: -f1)
 total=$(printf '%s\n' "$ids" | wc -l | tr -d ' ')
 case "${1:-next}" in
