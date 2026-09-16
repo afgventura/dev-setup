@@ -1,0 +1,53 @@
+{
+  "nextId": 5,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Scope native iOS PyCode client",
+      "description": "Inspect the repository and orchestration mechanics, establish the shared working document, and define an initial additive MVP that supports Claude Code/Codex/Pi-style sessions through a relay.",
+      "status": "completed",
+      "activeForm": "Scoping native iOS client",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789539114751,
+      "updatedAt": 1789539255198
+    },
+    {
+      "id": "2",
+      "subject": "Delegate implementation to Codex",
+      "description": "Acquire a dedicated worktree/session and brief a Codex subagent to implement the native Swift app and WebSocket relay without React Native.",
+      "status": "in_progress",
+      "activeForm": "Delegating implementation to Codex",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789539117562,
+      "updatedAt": 1789539259481
+    },
+    {
+      "id": "3",
+      "subject": "Review and verify implementation",
+      "description": "Inspect every changed file, run focused tests/builds, re-brief Codex for corrections, and verify delivered behavior against the agreed MVP.",
+      "status": "pending",
+      "activeForm": "Reviewing and verifying implementation",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789539120746,
+      "updatedAt": 1789539120746
+    },
+    {
+      "id": "4",
+      "subject": "Finalize and report deliverables",
+      "description": "Ensure the change is committed/pushed or otherwise clearly handed off, record evidence and next actions in the orchestration log, then tear down the worker safely.",
+      "status": "pending",
+      "activeForm": "Finalizing deliverables",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1789539124404,
+      "updatedAt": 1789539124404
+    }
+  ]
+}

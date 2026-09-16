@@ -80,7 +80,10 @@ reload, and every
 hook is wrapped in `>/dev/null 2>&1 || true` — tmux would otherwise pop a
 failing hook's output over the active pane.
 Clicks are handled by tmux (`MouseDown1Pane` → `sidebar-click.sh`), never by
-fzf, so keyboard focus can't land in the sidebar.
+fzf, so keyboard focus can't land in the sidebar. A window resize or focus-in
+(switching Spaces does both) runs `sidebar-redraw.sh` — full client redraw +
+fzf re-render — because fzf sometimes came back with a blank list after the
+resize/resize-back-to-51 pair.
 
 `agent-notify.sh` is the Claude Code `Stop`/`Notification` hook and Codex's
 `notify` hook. It drops a JSON request into `~/.local/state/agent-notifier/queue`;
