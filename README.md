@@ -98,6 +98,7 @@ tmux/tmux.conf            main server: bindings, title→tab-name rule, hooks
 tmux/ui.conf              outer chrome: sidebar pane, mouse, focus rules
 tmux/ghostty-ui.sh        Ghostty's `command`: builds the layout, attaches
 tmux/sidebar*.sh          the sidebar: list (grouping), refresh, click, cursor helpers
+tmux/copy-release.sh      drag-release: include the cursor cell tmux would otherwise drop
 tmux/agent-notify.sh      notification hook (Claude Code + Codex)
 tmux/selftest.sh          acceptance test (quits/relaunches Ghostty, ~25 s)
 tmux/clicktest.py         injects real mouse bytes to test sidebar clicks
