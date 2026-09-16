@@ -1,0 +1,6 @@
+interface:
+  display_name: "Orchestrate Subagents"
+  short_description: "Manage delegated agents; decide what to escalate"
+  default_prompt: "Use $orchestrate-subagents to keep every delegated session unblocked, verify what comes back, and decide what actually needs the director."
+policy:
+  allow_implicit_invocation: true

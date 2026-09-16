@@ -107,6 +107,7 @@ claude/hooks.json         hook entries merged into ~/.claude/settings.json
 codex/config.snippet.toml notify hook + shared Chrome MCP over HTTP
 pi/                       pi coding agent: settings, models (context window), MCP servers, extensions
 infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
+skills/                   agent skills worth reusing across repos (copy into <repo>/.agents/skills/)
 ```
 
 ## Tuning
@@ -169,6 +170,16 @@ banner instantiates every extension a second time (a throwaway loader just to
 count them), which left remote-pi bound to a dead API and broke `/remote-pi pair`;
 it also costs startup time.
 Skills are provided by those packages, not vendored here.
+
+## Skills
+
+`skills/orchestrate-subagents/` is the orchestrator skill from the haloai repo:
+one Codex/Claude session plans and fans work out to worker Codex sessions in
+their own tmux sessions/worktrees (`scripts/codex-session.sh`), with briefs,
+pushback rules, an adversarial-review stage and a closeout log. Workers run in
+an isolated tmux server (`TMUX_TMPDIR` jail) so a worker's `tmux kill-session`
+can never take down its siblings. Copy the folder into a repo's
+`.agents/skills/` (and `.claude/skills/` for Claude Code) to use it there.
 
 ## Testing after a change
 
