@@ -188,6 +188,18 @@ can never take down its siblings. `.claude/skills/orchestrate-subagents` is a
 symlink to it so Claude Code sees the same skill. Copy both into another repo
 to use it there.
 
+## Search guard
+
+Agents sometimes reach for recursive `grep` or `find`, which walk
+`node_modules` and every worktree (millions of files here) while `rg`/`fd`
+honour `.gitignore` and finish in under a second. `claude/guard-search.sh` is
+a PreToolUse hook for the shell tool that rejects recursive grep and
+directory-walking `find` (`-maxdepth 0-2` allowed) with a hint to use rg/fd.
+The same protocol serves Claude Code (`claude/hooks.json`) and Codex
+(`codex/hooks.json`, trusted once in the TUI); `pi/extensions/guard-search.ts`
+does it for pi. Piped `grep`, `git grep`, and text inside quotes or heredocs
+are untouched.
+
 ## Testing after a change
 
 ```sh

@@ -37,7 +37,8 @@ EOF
   say "Agent Notifier.app"
   "$REPO/agent-notifier/build.sh"
 
-  say "Claude Code hooks (Stop / Notification → notifier)"
+  say "Claude Code hooks (Stop / Notification → notifier; Bash → search guard)"
+  link "$REPO/claude/guard-search.sh" "$HOME/.config/claude/guard-search.sh"
   S="$HOME/.claude/settings.json"; mkdir -p "$HOME/.claude"; [ -f "$S" ] || echo '{}' > "$S"
   jq --slurpfile h "$REPO/claude/hooks.json" '
     .hooks //= {} |
@@ -49,8 +50,11 @@ EOF
   C="$HOME/.ssh/config"; mkdir -p "$HOME/.ssh"; touch "$C"; chmod 600 "$C"
   grep -q "dev-setup: reuse one SSH connection" "$C" || { printf '\n' >> "$C"; cat "$REPO/ssh/config.snippet" >> "$C"; }
 
-  say "Codex config"
+  say "Codex config + hooks (search guard; Codex asks once to trust it)"
   C="$HOME/.codex/config.toml"; mkdir -p "$HOME/.codex"; touch "$C"
+  if [ -f "$HOME/.codex/hooks.json" ] && ! grep -q guard-search "$HOME/.codex/hooks.json"; then
+    jq -s '.[0] * .[1]' "$HOME/.codex/hooks.json" "$REPO/codex/hooks.json" > "$HOME/.codex/hooks.json.tmp" && mv "$HOME/.codex/hooks.json.tmp" "$HOME/.codex/hooks.json"
+  elif [ ! -f "$HOME/.codex/hooks.json" ]; then cp "$REPO/codex/hooks.json" "$HOME/.codex/hooks.json"; fi
   if ! grep -q "agent-notify.sh" "$C"; then
     printf '\n' >> "$C"; sed "s|~/.config|$HOME/.config|" "$REPO/codex/config.snippet.toml" >> "$C"
   fi
@@ -75,6 +79,7 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   link "$REPO/pi/extensions/tasks.ts" "$HOME/.pi/agent/extensions/tasks.ts"
   link "$REPO/pi/extensions/skills-inline.ts" "$HOME/.pi/agent/extensions/skills-inline.ts"
   link "$REPO/pi/extensions/no-mesh.ts" "$HOME/.pi/agent/extensions/no-mesh.ts"
+  link "$REPO/pi/extensions/guard-search.ts" "$HOME/.pi/agent/extensions/guard-search.ts"
   link "$REPO/pi/extensions/tmux-window-name" "$HOME/.pi/agent/extensions/tmux-window-name"
   echo "   pi packages install on first run from settings.json → packages"
 fi
