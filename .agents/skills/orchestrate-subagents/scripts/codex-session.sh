@@ -15,7 +15,8 @@
 #
 # A worktree this script created is OWNED by its session. Releasing that session
 # removes the worktree, because an abandoned worktree is invisible state: it
-# holds a branch, a full node_modules, and an unreviewed diff nobody sweeps.
+# holds a branch, possibly a large node_modules, and an unreviewed diff nobody
+# sweeps.
 #
 # Subcommands:
 #   acquire [slug] [opts]     Create a worktree + branch and start Codex in it
@@ -25,6 +26,10 @@
 #   list                      Show every session with its OWNER, plus free worktrees
 #   mine                      Only the sessions you acquired, busy/idle — the sweep
 #   send <session> <file>     Hand Codex a brief file, print that turn's output
+#                             (send/dispatch resolve <file> against the
+#                             orchestrator's cwd and put the ABSOLUTE path in the
+#                             prompt — the worker's cwd is its own worktree, where
+#                             a gitignored .artifacts/ brief does not exist)
 #   ask <session> <text>      Send a one-line message, print that turn's output
 #   dispatch <session> <file> Same as send, but return immediately
 #   wait <session>            Block until the current turn ends, then print the tail
@@ -50,10 +55,14 @@
 # acquire options:
 #   --branch <name>   branch to create (default: agent/<slug>)
 #   --base <ref>      base to branch from (default: origin/main, fetched first)
-#   --install         run `pnpm install` in the new worktree (default: skip it;
-#                     a full install costs minutes and 4.5 GB, and most sessions
-#                     never run a test — let the session install if it needs to)
-#   --no-install      explicit form of the default
+#   --install         run `pnpm install` in the new worktree (default). With the
+#                     machine-level `enable-global-virtual-store` pnpm setting
+#                     (pnpm.io/git-worktrees) node_modules is ~2 MB of symlinks
+#                     into the shared store and the install takes ~3 s, so every
+#                     session starts able to run tests and /finalize-change.
+#   --no-install      skip it (the session must install before it can test)
+#   --sparse-path <p> include path <p> in a sparse checkout (repeatable; off by
+#                     default — a full checkout is the normal case)
 #   --reuse           attach to an existing worktree of the same slug
 #
 # stop / stop-all options:
@@ -173,6 +182,39 @@ fetch_origin_main() {
   git -C "$repo" fetch origin main --quiet || return 1
   date +%s >"$FETCH_STAMP"
   return 0
+}
+
+# Git speed for a fleet of worktrees on one .git. Measured on the haloai
+# monorepo (25.9k tracked files, 9k remote branches, 40+ worktrees):
+#   - `git status` in a worktree: 0.40 s -> 0.07 s with core.untrackedCache
+#     (no daemon, unlike fsmonitor; 46 fsmonitor daemons is not a good idea on
+#     a 16 GB laptop). The setting lives in the shared .git/config, so one call
+#     covers every worktree.
+#   - `git fetch origin main`: 3.2 s, of which 2.2 s is the SSH handshake to
+#     GitHub. With ControlMaster in ~/.ssh/config it is 1.2 s; that is an
+#     ssh setting, not a git one, so it is only checked here (see doctor).
+#   - commit-graph makes `rev-list --count origin/main..HEAD` (run once per
+#     worktree by `mine`/`doctor`) cheap; scheduled maintenance keeps it and
+#     the packs fresh in the background.
+# Idempotent; called from acquire so a fresh clone picks it up on first use.
+ensure_git_perf_config() {
+  local repo="$1"
+  [ "$(git -C "$repo" config --get core.untrackedCache 2>/dev/null)" = true ] ||
+    git -C "$repo" config core.untrackedCache true
+  [ "$(git -C "$repo" config --get fetch.prune 2>/dev/null)" = true ] ||
+    git -C "$repo" config fetch.prune true
+  [ "$(git -C "$repo" config --get fetch.writeCommitGraph 2>/dev/null)" = true ] ||
+    git -C "$repo" config fetch.writeCommitGraph true
+  if ! git -C "$repo" config --get maintenance.strategy >/dev/null 2>&1; then
+    git -C "$repo" config maintenance.strategy incremental
+    git -C "$repo" maintenance register >/dev/null 2>&1 || true
+    git -C "$repo" maintenance start >/dev/null 2>&1 || true
+  fi
+}
+
+# Whether ssh multiplexes its GitHub connection (see ensure_git_perf_config).
+github_ssh_multiplexed() {
+  ssh -G github.com 2>/dev/null | grep -qi '^controlmaster auto'
 }
 
 # `.artifacts/` is gitignored and `stop` deletes the worktree, so a session's
@@ -545,7 +587,8 @@ report_claim() {
 cmd_acquire() {
   # Installing costs minutes and 4.5 GB per worktree, and most sessions never run
   # a test. Default to skipping it; the session installs if and when it needs to.
-  local slug="" branch="" base="origin/main" install=0 reuse=0 arg
+  local slug="" branch="" base="origin/main" install=1 reuse=0 arg
+  local sparse_paths=()
   local repo root dir session
   while [ $# -gt 0 ]; do
     arg="$1"
@@ -554,6 +597,7 @@ cmd_acquire() {
       --base) base="${2:?--base needs a value}"; shift 2 ;;
       --no-install) install=0; shift ;;
       --install) install=1; shift ;;
+      --sparse-path) sparse_paths+=("${2:?--sparse-path needs a value}"); shift 2 ;;
       --reuse) reuse=1; shift ;;
       -*) die "unknown option: $arg" ;;
       *) slug="$arg"; shift ;;
@@ -568,6 +612,7 @@ cmd_acquire() {
   root=$(worktree_root)
   dir="$root/wt-$slug"
   session=$(session_for "$dir")
+  ensure_git_perf_config "$repo"
 
   # Every task starts here, so this is the natural place to keep the director's
   # checkout current. Advisory only: a refusal (dirt, or an untracked file that
@@ -584,15 +629,26 @@ cmd_acquire() {
       echo "codex-session: warning: fetch failed, branching from local $base" >&2
     git -C "$repo" worktree add -b "$branch" "$dir" "$base" >&2 ||
       die "could not create worktree $dir on branch $branch"
+    # Sparse checkout only when the caller asked for it. The former default of
+    # `set --cone .` is NOT "everything": in cone mode "." selects the root
+    # directory's files only, so every acquired worktree lost apps/, patches/
+    # and the rest, `pnpm install` failed on the missing pnpm patches, and the
+    # worker was blamed for a sparse tree it never enabled (2026-09-16, twice).
+    if [ "${#sparse_paths[@]}" -gt 0 ]; then
+      echo "codex-session: enabling sparse checkout in $dir" >&2
+      (cd "$dir" && git sparse-checkout init --cone &&
+        git sparse-checkout set --cone "${sparse_paths[@]}") ||
+        die "could not configure sparse checkout in $dir"
+    fi
     if [ "$install" -eq 1 ]; then
-      echo "codex-session: installing dependencies in $dir (several minutes)" >&2
+      echo "codex-session: installing dependencies in $dir" >&2
       (cd "$dir" && pnpm install --frozen-lockfile >&2) ||
         echo "codex-session: warning: pnpm install failed. The session cannot run
      tests or /finalize-change until dependencies are installed." >&2
     else
-      echo "codex-session: no pnpm install (default). If this session needs to run
-     tests or /finalize-change, it should run 'pnpm install --frozen-lockfile'
-     itself. Pass --install to acquire it pre-installed." >&2
+      echo "codex-session: pnpm install skipped (--no-install). The session cannot
+     run tests or /finalize-change until it runs 'pnpm install --frozen-lockfile'
+     itself." >&2
     fi
   fi
 
@@ -631,7 +687,7 @@ cmd_claim() {
 }
 
 cmd_list() {
-  local repo root dir session state owned closeout
+  local repo root dir session pi_session state owned closeout
   repo=$(main_repo)
   root=$(worktree_root)
 
@@ -641,11 +697,22 @@ cmd_list() {
     [ -n "$dir" ] || continue
     case "$dir" in "$root"/*) ;; *) continue ;; esac
     session=$(session_for "$dir")
+    # `pi-session.sh` (a second coding-agent backend) claims worktrees in this
+    # same shared root with a `pi-` tmux session instead of `codex-`. Without
+    # this check a worktree it holds reads as "free" here, which is wrong, not
+    # just incomplete: it invites a second `acquire --reuse`/`claim` into a
+    # tree someone is already driving. See pi-session.sh's header.
+    pi_session="pi-$(basename "$dir")"
     if session_exists "$session"; then
       state="claimed ($(is_busy "$session" && echo busy || echo idle))"
       owned=$(session_owner "$session")
       [ "$owned" = "$(owner_id)" ] && owned="$owned (you)"
       closeout=$(closeout_summary "$session")
+    elif tmux has-session -t "$pi_session" 2>/dev/null; then
+      state="claimed by pi-session.sh, not this tool"
+      session="$pi_session"
+      owned="- (see pi-session.sh list)"
+      closeout="-"
     elif is_dirty "$dir"; then
       state="free but DIRTY ($(git -C "$dir" status --porcelain | wc -l | tr -d ' ') files)"
       owned="-"
@@ -917,12 +984,56 @@ turn() {
   transcript "$session" | tail -n +"$((before + 1))"
 }
 
+# The two commands that hand a worker a brief file. `send`/`dispatch` verify the
+# brief with [ -f ] **relative to the orchestrator's cwd**, while the worker's cwd
+# is its own worktree. The documented brief location
+# (.artifacts/orchestration/<task-slug>/<slug>.md) is gitignored, so it exists only
+# in the orchestrator's checkout: embedding the relative path asked the worker to
+# open a file that is not in its tree (observed 2026-09-16 — one worker stopped
+# and asked for the real path, two spent minutes hunting for it).
+#
+# Convention enforced here: the path is resolved against the ORCHESTRATOR's cwd,
+# which is the same file [ -f ] checked, so the verified file and the read file
+# are one file. It is never silently resolved against the worker's worktree; when
+# a relative path also exists inside that worktree the ambiguity is named on
+# stderr instead of being guessed.
+#
+# Deliberate duplication, not an oversight: pi-session.sh carries these same two
+# functions and the same convention. Both are standalone scripts a manager may
+# copy on its own, so a shared library would save ~20 lines at the cost of a third
+# file each must source by path. Keep the pair in sync by hand — this comment is
+# the pointer.
+resolve_brief() {
+  local brief="$1" dir base
+  dir=$(dirname -- "$brief")
+  base=$(basename -- "$brief")
+  (cd -- "$dir" && printf '%s/%s\n' "$(pwd -P)" "$base")
+}
+
+brief_prompt() {
+  local session="$1" brief="$2" abs worktree
+  [ -f "$brief" ] || die "brief not found: $brief"
+  abs=$(resolve_brief "$brief") || die "could not resolve '$brief' to an absolute path"
+  worktree=$(read_state "$session" repo 2>/dev/null || true)
+  case "$brief" in
+    /*) ;;
+    *)
+      if [ -n "$worktree" ] && [ -f "$worktree/$brief" ] && [ "$worktree/$brief" != "$abs" ]; then
+        echo "codex-session: warning: '$brief' also exists inside the worker's worktree ($worktree/$brief)." >&2
+        echo "  Sending the orchestrator-cwd copy ($abs); pass an absolute path if you meant the worktree copy." >&2
+      fi
+      ;;
+  esac
+  printf 'Read the file %s and carry out the task it describes. Follow it exactly.' "$abs"
+}
+
 cmd_send() {
   local session="${1:?usage: $0 send <session> <brief-file>}"
   local brief="${2:?usage: $0 send <session> <brief-file>}"
-  [ -f "$brief" ] || die "brief not found: $brief"
+  local message
+  message=$(brief_prompt "$session" "$brief")
   require_owner "$session" "send to" "${3:-}"
-  turn "$session" "Read the file $brief and carry out the task it describes. Follow it exactly."
+  turn "$session" "$message"
 }
 
 cmd_ask() {
@@ -963,7 +1074,7 @@ cmd_dispatch() {
   local session="${1:?usage: $0 dispatch <session> <brief-file> [--adopt] [--no-gate <reason>]}"
   local brief="${2:?usage: $0 dispatch <session> <brief-file> [--adopt] [--no-gate <reason>]}"
   shift 2
-  local adopt="" no_gate=""
+  local adopt="" no_gate="" message
   while [ $# -gt 0 ]; do
     case "$1" in
       --adopt) adopt="--adopt"; shift ;;
@@ -973,11 +1084,13 @@ cmd_dispatch() {
   done
   require_session "$session"
   require_owner "$session" "dispatch to" "$adopt"
-  [ -f "$brief" ] || die "brief not found: $brief"
+  message=$(brief_prompt "$session" "$brief")
+  # The gate still reads the file [ -f ] verified, i.e. the orchestrator-cwd copy
+  # the prompt names, so the checked brief and the read brief cannot diverge.
   require_gate_a "$brief" "$no_gate"
   is_busy "$session" && die "'$session' is mid-turn"
   line_count "$session" >"${TMPDIR:-/tmp}/.codex-mark-$session"
-  submit "$session" "Read the file $brief and carry out the task it describes. Follow it exactly."
+  submit "$session" "$message"
   # Codex intermittently leaves the pasted brief sitting at the prompt with the
   # Enter unconsumed, so a returning `submit` is not proof the turn started.
   # Poll briefly, press Enter once more, then poll again — cheaper and more
@@ -1750,17 +1863,24 @@ cmd_gate() { print_resolve_gate; }
 
 # Worktrees this repository has attached, excluding the main checkout itself.
 # Emits: dirty_count|unpushed_count|branch|path
+fleet_row() {
+  local wt="$1" d u b
+  [ -d "$wt" ] || return 0
+  d=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  b=$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')
+  u=$(git -C "$wt" rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+  printf '%s|%s|%s|%s\n' "${d:-0}" "${u:-0}" "$b" "$wt"
+}
+
+# Forty worktrees at ~0.1-0.4 s of git each is many seconds when walked one by
+# one; the work is I/O-bound on a shared .git, so four at a time is the sweet
+# spot (more just contends on the object store).
 fleet_rows() {
-  local repo wt d u b
+  local repo
   repo=$(main_repo)
-  for wt in $(git -C "$repo" worktree list --porcelain | awk '/^worktree /{print $2}'); do
-    [ "$wt" = "$repo" ] && continue
-    [ -d "$wt" ] || continue
-    d=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-    b=$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')
-    u=$(git -C "$wt" rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
-    printf '%s|%s|%s|%s\n' "${d:-0}" "${u:-0}" "$b" "$wt"
-  done
+  export -f fleet_row
+  git -C "$repo" worktree list --porcelain | awk -v r="$repo" '/^worktree /{ if ($2 != r) print $2 }' |
+    xargs -P 4 -I{} bash -c 'fleet_row "$1"' _ {} 2>/dev/null | sort -t'|' -k4
 }
 
 # Bring the director's repo back to exactly origin/main.
@@ -1874,6 +1994,11 @@ cmd_doctor() {
   printf '  %-34s %s\n' "local branches" "$branches"
   printf '  %-34s %s\n' "stash entries (SHARED)" "$stashes"
   echo
+  echo "git speed:"
+  printf '  %-34s %s\n' "core.untrackedCache" "$(git -C "$repo" config --get core.untrackedCache 2>/dev/null || echo unset)"
+  printf '  %-34s %s\n' "scheduled maintenance" "$(git -C "$repo" config --get maintenance.strategy 2>/dev/null || echo off)"
+  printf '  %-34s %s\n' "ssh to github.com multiplexed" "$(github_ssh_multiplexed && echo yes || echo no)"
+  echo
 
   # Thresholds are judgement calls, not invariants: crossing one means look, not
   # that anything is broken. Never make these fatal — this is a report.
@@ -1887,6 +2012,26 @@ cmd_doctor() {
   if [ "$dirt" -gt 0 ]; then
     echo "WARNING: $dirt uncommitted files in the director repo. It is not a work"
     echo "         surface — subagent work belongs in a worktree."
+    warned=1
+  fi
+  if [ "$(git -C "$repo" config --get core.untrackedCache 2>/dev/null)" != true ]; then
+    echo "WARNING: git perf settings missing; run any acquire, or:"
+    echo "         git -C $repo config core.untrackedCache true  (status in a worktree: 0.4 s -> 0.07 s)"
+    warned=1
+  fi
+  if ! github_ssh_multiplexed; then
+    echo "WARNING: ssh does not reuse its GitHub connection: every fetch/push pays a"
+    echo "         ~2 s handshake. Add to ~/.ssh/config:"
+    echo "           Host github.com"
+    echo "             ControlMaster auto"
+    echo "             ControlPath ~/.ssh/cm-%r@%h:%p"
+    echo "             ControlPersist 10m"
+    warned=1
+  fi
+  if [ "$total" -gt 25 ]; then
+    echo "WARNING: $total worktrees attached. Each one is an index git must open"
+    echo "         for every fleet command and a directory to keep in sync; stop"
+    echo "         finished sessions and prune leftovers: $0 sweep"
     warned=1
   fi
   if [ "$stashes" -gt 10 ]; then

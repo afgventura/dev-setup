@@ -1,0 +1,8 @@
+# dev-setup: reuse one SSH connection to GitHub for 10 minutes.
+# Every git fetch/push/ls-remote otherwise pays a fresh handshake (~2.2 s from
+# Jakarta); with many agents fetching in parallel that was most of "git is slow".
+Host github.com
+  ControlMaster auto
+  ControlPath ~/.ssh/cm-%r@%h:%p
+  ControlPersist 10m
+  ServerAliveInterval 30

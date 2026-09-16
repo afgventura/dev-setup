@@ -45,6 +45,10 @@ EOF
       .hooks[$e.key] = (((.hooks[$e.key] // []) | map(select(.hooks[0].command != $e.value[0].hooks[0].command))) + $e.value))
   ' "$S" > "$S.tmp" && mv "$S.tmp" "$S"
 
+  say "ssh: reuse the GitHub connection (every fetch/push otherwise pays a ~2 s handshake)"
+  C="$HOME/.ssh/config"; mkdir -p "$HOME/.ssh"; touch "$C"; chmod 600 "$C"
+  grep -q "dev-setup: reuse one SSH connection" "$C" || { printf '\n' >> "$C"; cat "$REPO/ssh/config.snippet" >> "$C"; }
+
   say "Codex config"
   C="$HOME/.codex/config.toml"; mkdir -p "$HOME/.codex"; touch "$C"
   if ! grep -q "agent-notify.sh" "$C"; then

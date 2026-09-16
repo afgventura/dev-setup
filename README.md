@@ -108,6 +108,7 @@ tmux/clicktest.py         injects real mouse bytes to test sidebar clicks
 agent-notifier/           Swift source + build script for the notifier app
 claude/hooks.json         hook entries merged into ~/.claude/settings.json
 codex/config.snippet.toml notify hook + shared Chrome MCP over HTTP
+ssh/config.snippet        ControlMaster for github.com (fetch 3.2 s → 1.2 s)
 pi/                       pi coding agent: settings, models (context window), MCP servers, extensions
 infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 .agents/skills/           agent skills (.claude/skills/* are symlinks to them, for Claude Code)
