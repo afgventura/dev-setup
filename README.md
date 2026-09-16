@@ -160,6 +160,10 @@ ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
 session you want to drive → `/remote-pi relay url https://remote-pi-relay-….a.run.app`
 (our own, see `infra/remote-pi-relay/`) → scan the QR with the app. Peers are
 paired with Ed25519 keys kept in `~/.pi/remote/` and the phone Keychain.
+`pi/extensions/no-mesh.ts` blocks remote-pi's agent-network tools (`agent_send`,
+`agent_request`, `list_peers`): one session broadcasting a status note landed in
+every other session as a `[remote-pi:mesh-message]` that started a model turn
+there. We use remote-pi for the phone only.
 `~/.pi/settings.json` has `claudeHeaderEnabled: false` — cc-my-pi's startup
 banner instantiates every extension a second time (a throwaway loader just to
 count them), which left remote-pi bound to a dead API and broke `/remote-pi pair`;

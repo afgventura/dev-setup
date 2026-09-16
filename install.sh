@@ -70,6 +70,7 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   link "$REPO/pi/extensions/loop.ts" "$HOME/.pi/agent/extensions/loop.ts"
   link "$REPO/pi/extensions/tasks.ts" "$HOME/.pi/agent/extensions/tasks.ts"
   link "$REPO/pi/extensions/skills-inline.ts" "$HOME/.pi/agent/extensions/skills-inline.ts"
+  link "$REPO/pi/extensions/no-mesh.ts" "$HOME/.pi/agent/extensions/no-mesh.ts"
   link "$REPO/pi/extensions/tmux-window-name" "$HOME/.pi/agent/extensions/tmux-window-name"
   echo "   pi packages install on first run from settings.json → packages"
 fi
