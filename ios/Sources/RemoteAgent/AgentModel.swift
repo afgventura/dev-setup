@@ -23,6 +23,20 @@ enum KeychainStore {
     private var token: String { KeychainStore.read() ?? "" }
     private var relayURL: URL? { URL(string: UserDefaults.standard.string(forKey: "relayURL") ?? "ws://127.0.0.1:8765") }
 
+    init() {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--pi-review-fixture") {
+            connectionState = "connected"
+            sessions = [
+                AgentSession(id: "pi-review", title: "haloai / pi-ios-ui", state: "waitingForInput", messages: [
+                    AgentMessage(id: "review-1", role: "user", text: "Make the session list feel calmer and easier to scan.", streaming: false),
+                    AgentMessage(id: "review-2", role: "assistant", text: "I found the session navigation and tightened the hierarchy. The new layout keeps the active Pi state visible while leaving implementation details out of the conversation.", streaming: false),
+                    AgentMessage(id: "review-3", role: "assistant", text: "I’m ready to apply the change.\n\n```swift\nlet accent = Color.indigo\n```", streaming: false)
+                ], question: AgentQuestion(id: "review-question", kind: "choice", title: "Apply the interface update?", message: "Pi has prepared the next step for this workspace.", options: ["Apply changes", "Review first"], placeholder: nil, prefill: nil))]
+        }
+#endif
+    }
+
     func configure(url: String, token: String) {
         generation += 1
         terminalFailure = false
@@ -34,7 +48,12 @@ enum KeychainStore {
         let current = generation
         connectTask = Task { await connect(generation: current) }
     }
-    func connect() async { await connect(generation: generation) }
+    func connect() async {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--pi-review-fixture") { return }
+#endif
+        await connect(generation: generation)
+    }
     private func connect(generation current: Int) async {
         guard current == generation else { return }
         guard socket == nil else { return }
