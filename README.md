@@ -145,7 +145,8 @@ SKILL.md bodies go into context as one collapsed `📚 loaded skills` message
 and the prompt stays exactly as typed. Typing `/` anywhere in the line pops
 the skill picker (Tab/Enter inserts the name).
 `pi/extensions/tmux-window-name/` is a vendored copy of `pi-tmux-window-name`
-(auto-names the tmux tab from the first prompt; `/rename`) with two fixes: it
+(auto-names the tmux tab from the first prompt; `/rename` regenerates,
+`/rename <name>` sets your own) with two fixes: it
 sends the `x-opencode-session` header opencode-go requires, and keeps reasoning
 minimal so thinking models return a parseable name.
 `pi/models.json` caps deepseek-v4.1-flash at a 500k window (of its nominal 1M) so

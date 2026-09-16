@@ -17,37 +17,37 @@
       "id": "2",
       "subject": "Delegate implementation to Codex",
       "description": "Acquire a dedicated worktree/session and brief a Codex subagent to implement the native Swift app and WebSocket relay without React Native.",
-      "status": "in_progress",
+      "status": "completed",
       "activeForm": "Delegating implementation to Codex",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1789539117562,
-      "updatedAt": 1789539259481
+      "updatedAt": 1789544909392
     },
     {
       "id": "3",
       "subject": "Review and verify implementation",
       "description": "Inspect every changed file, run focused tests/builds, re-brief Codex for corrections, and verify delivered behavior against the agreed MVP.",
-      "status": "pending",
+      "status": "completed",
       "activeForm": "Reviewing and verifying implementation",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1789539120746,
-      "updatedAt": 1789539120746
+      "updatedAt": 1789545823647
     },
     {
       "id": "4",
       "subject": "Finalize and report deliverables",
       "description": "Ensure the change is committed/pushed or otherwise clearly handed off, record evidence and next actions in the orchestration log, then tear down the worker safely.",
-      "status": "pending",
+      "status": "in_progress",
       "activeForm": "Finalizing deliverables",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1789539124404,
-      "updatedAt": 1789539124404
+      "updatedAt": 1789545828360
     }
   ]
 }

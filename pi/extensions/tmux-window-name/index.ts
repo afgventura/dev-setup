@@ -489,8 +489,14 @@ export default function tmuxWindowNameExtension(pi: ExtensionAPI) {
   };
 
   const renameFromBranch = async (args: string, ctx: ExtensionCommandContext) => {
-    if (args.trim()) {
-      notify(ctx, "/rename does not take arguments", "error");
+    const custom = args.trim();
+    if (custom) {
+      // `/rename <name>`: use the given name verbatim (tab, session, remote-pi)
+      // instead of generating one. Auto-naming stays off for this session.
+      if (renameInFlight) await renameInFlight;
+      const targetWindow = await captureTmuxWindowTarget();
+      await persistNames({ windowName: custom, sessionName: custom }, targetWindow);
+      notify(ctx, `Renamed session: ${custom}`, "info");
       return;
     }
 
@@ -512,7 +518,7 @@ export default function tmuxWindowNameExtension(pi: ExtensionAPI) {
   };
 
   pi.registerCommand("rename", {
-    description: "Rename the current session from user and assistant messages in this branch",
+    description: "/rename <name> sets the tab/session name; bare /rename regenerates it from the conversation",
     handler: renameFromBranch,
   });
 
