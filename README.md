@@ -128,7 +128,8 @@ infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 (`cc-my-pi`, `pi-mcp-adapter`, `pi-subagents` — required by cc-my-pi's `TaskExecute`, ralph loop, …).
 `pi/extensions/loop.ts` adds `/loop [interval] <prompt>` like Claude Code's:
 with an interval it fires on a fixed schedule; without one it is a self-paced
-loop where the agent picks each delay by calling `schedule_wakeup` (also
+loop where the agent picks each delay by calling `schedule_wakeup` (30 s–24 h,
+or `at: "00:00"` / ISO time for a fixed clock time; also
 exposed as tools `loop_start` / `loop_stop`, so the agent can start a loop
 itself instead of asking you to).
 `pi/extensions/tasks.ts` adds Claude Code's background-task model: tools

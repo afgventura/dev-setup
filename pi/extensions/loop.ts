@@ -47,7 +47,7 @@ export default function (pi: ExtensionAPI) {
 		`/loop (dynamic, self-paced) — task:\n${task}\n\n` +
 		`You are in a self-paced loop. Do one pass of the task now. Then, at the END of this and every later turn, call ` +
 		`schedule_wakeup(delay_s, prompt, reason) with this exact task text as the prompt and a delay you choose from what ` +
-		`you are actually waiting for (30s–3600s; longer when nothing is changing, shorter when you are polling something ` +
+		`you are actually waiting for (30s–24h, or an absolute time via at; longer when nothing is changing, shorter when you are polling something ` +
 		`fast-moving). Not calling schedule_wakeup ends the loop — do that only when the task is complete, and say so; ` +
 		`the user can also end it with /loop stop.`;
 
@@ -118,13 +118,15 @@ export default function (pi: ExtensionAPI) {
 			"Re-enter this session after a delay with the given prompt, exactly like Claude Code's ScheduleWakeup. One-shot: " +
 			"each firing must call schedule_wakeup again to continue the loop, or stop by not calling it (or stop: true). " +
 			"Use it to self-pace a monitoring loop (\"sweep the workers\", \"check CI\") instead of sleeping or polling. " +
-			"Delay is clamped to 30s–3600s. Only one pending wake-up at a time; a new call replaces it.",
+			"Delay is clamped to 30s–24h; pass at (\"HH:MM\" local or ISO-8601) instead of delay_s for a fixed clock time, e.g. midnight. " +
+			"Only one pending wake-up at a time; a new call replaces it.",
 		promptSnippet: "schedule_wakeup: re-enter later with a prompt (self-paced loop); loop_start/loop_stop: fixed-interval loop",
 		promptGuidelines: [
 			"To keep working on something later (waiting on workers, CI, a deploy), call schedule_wakeup with the prompt to resume with — never sleep-poll, and never tell the user to run /loop for you.",
 		],
 		parameters: Type.Object({
-			delay_s: Type.Optional(Type.Number({ description: "Seconds until the wake-up (30–3600). Required unless stop is true." })),
+			delay_s: Type.Optional(Type.Number({ description: "Seconds until the wake-up (30–86400). Required unless at or stop is given." })),
+			at: Type.Optional(Type.String({ description: "Wake at a clock time instead: \"HH:MM\" (local, next occurrence) or an ISO-8601 timestamp. Overrides delay_s." })),
 			prompt: Type.Optional(Type.String({ description: "The prompt to re-enter with. Pass the same loop instruction each time. Required unless stop is true." })),
 			reason: Type.Optional(Type.String({ description: "One short sentence on what you are waiting for (shown to the user)." })),
 			stop: Type.Optional(Type.Boolean({ description: "true = cancel the pending wake-up and end the loop." })),
@@ -135,10 +137,24 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.setStatus("wakeup", undefined);
 				return { content: [{ type: "text", text: "wake-up cancelled; loop ended" }], details: {} };
 			}
-			if (!params.prompt || params.delay_s == null) {
-				return { content: [{ type: "text", text: "delay_s and prompt are required (or stop: true)" }], details: {} };
+			let delayS = params.delay_s;
+			if (params.at) {
+				const m = /^(\d{1,2}):(\d{2})$/.exec(params.at.trim());
+				let t: number;
+				if (m) {
+					const d = new Date(); d.setHours(Number(m[1]), Number(m[2]), 0, 0);
+					if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1); // already past today → tomorrow
+					t = d.getTime();
+				} else {
+					t = Date.parse(params.at);
+					if (Number.isNaN(t)) return { content: [{ type: "text", text: `cannot parse at="${params.at}" — use "HH:MM" or ISO-8601` }], details: {} };
+				}
+				delayS = (t - Date.now()) / 1000;
 			}
-			const delay = Math.min(3600, Math.max(30, Math.round(params.delay_s)));
+			if (!params.prompt || delayS == null) {
+				return { content: [{ type: "text", text: "prompt and delay_s (or at) are required (or stop: true)" }], details: {} };
+			}
+			const delay = Math.min(86400, Math.max(30, Math.round(delayS)));
 			clearWakeup();
 			const prompt = params.prompt;
 			const reason = params.reason ?? "";
@@ -153,7 +169,7 @@ export default function (pi: ExtensionAPI) {
 			wakeup = { timer, at, prompt, reason };
 			ctx.ui.setStatus("wakeup", ctx.ui.theme.fg("accent", `⏰ ${new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${reason ? ` · ${reason}` : ""}`));
 			return {
-				content: [{ type: "text", text: `wake-up scheduled in ${delay}s (${new Date(at).toLocaleTimeString()}). Nothing more to do now — end your turn; you will be re-invoked with the prompt.` }],
+				content: [{ type: "text", text: `wake-up scheduled in ${delay >= 3600 ? `${(delay / 3600).toFixed(1)}h` : `${delay}s`} (${new Date(at).toLocaleString()}). Nothing more to do now — end your turn; you will be re-invoked with the prompt.` }],
 				details: { at, delay },
 			};
 		},
