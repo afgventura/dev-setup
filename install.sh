@@ -80,6 +80,7 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   link "$REPO/pi/extensions/skills-inline.ts" "$HOME/.pi/agent/extensions/skills-inline.ts"
   link "$REPO/pi/extensions/no-mesh.ts" "$HOME/.pi/agent/extensions/no-mesh.ts"
   link "$REPO/pi/extensions/guard-search.ts" "$HOME/.pi/agent/extensions/guard-search.ts"
+  link "$REPO/pi/extensions/wheel.ts" "$HOME/.pi/agent/extensions/wheel.ts"
   link "$REPO/pi/extensions/tmux-window-name" "$HOME/.pi/agent/extensions/tmux-window-name"
   # one catch-all subagent type, model pinned; pi-subagents' built-ins are off
   mkdir -p "$HOME/.pi/agent/agents"

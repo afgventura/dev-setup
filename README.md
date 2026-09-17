@@ -171,6 +171,10 @@ paired with Ed25519 keys kept in `~/.pi/remote/` and the phone Keychain.
 `agent_request`, `list_peers`): one session broadcasting a status note landed in
 every other session as a `[remote-pi:mesh-message]` that started a model turn
 there. We use remote-pi for the phone only.
+`pi/extensions/wheel.ts` sets the fullscreen mouse-wheel step to 3 lines per
+event (pi hard-codes 1 and repaints the whole screen per event — upstream #9052
+/ #9549 — which is why a trackpad flick lagged); `/wheel N` tunes it, Alt still
+multiplies by 5.
 `~/.pi/settings.json` has `claudeHeaderEnabled: false` — cc-my-pi's startup
 banner instantiates every extension a second time (a throwaway loader just to
 count them), which left remote-pi bound to a dead API and broke `/remote-pi pair`;
