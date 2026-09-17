@@ -95,16 +95,17 @@ pinned to the behaviour rather than incidental.
 ## Run scripts cheaply
 <Include this block verbatim in every brief that runs repository scripts.>
 
-Scripts go through `pnpm script:run` (the `/script-runtime` rule) — but not
-through `pnpm gsm-run` on every call. `gsm-run` lists ~600 Secret Manager
-secrets and reads ~270 of them each time it starts (~5 s and ~1.3 s CPU with
-its pnpm layer), and a loop that wraps every script in it spends more CPU on
-secret fetches than on the work. Fetch once per shell, then run scripts bare:
+Scripts go through the shared runner (the `/script-runtime` rule): use
+`bin/script-run` from the repository root — it is `pnpm script:run` without
+the pnpm process in front (0.4 s CPU instead of 0.8 s, 150 MB less resident
+per run). Do not wrap every call in `gsm-run`: each start reads the secret
+bundle plus ~130 individual secrets (~2.5 s, ~0.6 s CPU). Fetch once per
+shell, then run scripts bare:
 
 ```bash
-eval "$(pnpm gsm-run --export)"        # once; secrets live in this shell only
-pnpm script:run scripts/a.ts -- …       # no gsm-run per call
-pnpm script:run scripts/b.ts -- …
+eval "$(bin/gsm-run --export)"          # once; secrets live in this shell only
+bin/script-run scripts/a.ts -- …        # no gsm-run per call
+bin/script-run scripts/b.ts -- …
 ```
 
 Never `pnpm exec tsx …` or `bun …` a script directly: it skips the runner's
