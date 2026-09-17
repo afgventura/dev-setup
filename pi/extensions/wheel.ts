@@ -18,7 +18,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { TuiAltScreen } from "@earendil-works/pi-tui";
 
-const DEFAULT_LINES = 3; // what regular mode scrolls per event
+const DEFAULT_LINES = 5; // same as the tmux copy-mode wheel step (-N 5) in every other pane
 const DIR = join(homedir(), ".pi", "agent");
 const FILE = join(DIR, "wheel.json");
 

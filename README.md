@@ -171,8 +171,8 @@ paired with Ed25519 keys kept in `~/.pi/remote/` and the phone Keychain.
 `agent_request`, `list_peers`): one session broadcasting a status note landed in
 every other session as a `[remote-pi:mesh-message]` that started a model turn
 there. We use remote-pi for the phone only.
-`pi/extensions/wheel.ts` sets the fullscreen mouse-wheel step to 3 lines per
-event (pi hard-codes 1 and repaints the whole screen per event — upstream #9052
+`pi/extensions/wheel.ts` sets the fullscreen mouse-wheel step to 5 lines per
+event — the same step as tmux copy-mode in other panes (pi hard-codes 1 and repaints the whole screen per event — upstream #9052
 / #9549 — which is why a trackpad flick lagged); `/wheel N` tunes it, Alt still
 multiplies by 5.
 `~/.pi/settings.json` has `claudeHeaderEnabled: false` — cc-my-pi's startup
