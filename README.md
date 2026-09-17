@@ -163,6 +163,15 @@ check at startup (~0.8 s); run `pi update` yourself now and then.
 it a bare model name like `gpt-5.6-luna` — which AGENTS.md tells subagents to
 use — resolved to opencode-go's copy and was billed there instead of to the
 ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
+`self-hosted/z-ai/glm-5.3-flash` is our own GLM 5.3 Flash behind the sgl-router
+gateway (`http://10.184.0.50:9000/v1`, GKE ILB over Tailscale, $0). Its key is
+read from Keychain at request time (`apiKey: "!security find-generic-password
+… haloai-shell:SELF_HOSTED_LLM_API_KEY"`), so it doesn't depend on shell env;
+store it once with `security add-generic-password -a "$USER" -s
+haloai-shell:SELF_HOSTED_LLM_API_KEY -w "$(gcloud secrets versions access latest
+--secret=SELF_HOSTED_LLM_API_KEY --project=halo-ai-469606)"`. pi reads
+`models.json` only at startup (`/reload` doesn't touch the model catalogue), so
+a session started before the provider existed has to be relaunched to see it.
 `remote-pi` is the remote control (iOS app "Remote Pi"): `/remote-pi` in the
 session you want to drive → `/remote-pi relay url https://remote-pi-relay-….a.run.app`
 (our own, see `infra/remote-pi-relay/`) → scan the QR with the app. Peers are
