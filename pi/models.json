@@ -4,6 +4,12 @@
       "modelOverrides": {
         "deepseek-v4.1-flash": {
           "contextWindow": 500000
+        },
+        "muse-spark-1.2-contributor": {
+          "contextWindow": 500000
+        },
+        "muse-spark-1.3-contributor": {
+          "contextWindow": 500000
         }
       }
     },

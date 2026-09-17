@@ -150,7 +150,7 @@ the skill picker (Tab/Enter inserts the name).
 `/rename <name>` sets your own) with two fixes: it
 sends the `x-opencode-session` header opencode-go requires, and keeps reasoning
 minimal so thinking models return a parseable name.
-`pi/models.json` caps deepseek-v4.1-flash at a 500k window (of its nominal 1M) so
+`pi/models.json` caps deepseek-v4.1-flash and both muse-spark contributor models at a 500k window (of their nominal 1M) so
 auto-compaction and the ctx meter both work off 500k — cost isn't the constraint
 at $0.003/M cached input; long-context quality and latency are.
 `tuiMode: fullscreen` renders only the visible part of the transcript on its
