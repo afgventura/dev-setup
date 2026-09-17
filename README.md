@@ -175,6 +175,15 @@ there. We use remote-pi for the phone only.
 banner instantiates every extension a second time (a throwaway loader just to
 count them), which left remote-pi bound to a dead API and broke `/remote-pi pair`;
 it also costs startup time.
+`pi/agents/general-purpose.md` is the one subagent type: pi-subagents' three
+built-ins (general-purpose / Explore / Plan) are switched off
+(`pi/subagents.json` → `disableDefaultAgents`), and any `subagent_type` the
+orchestrator makes up falls back to it (`fallbackSubagent`). It is a parent
+twin (all tools, same system prompt and skills) pinned to `model:
+openai-codex/gpt-5.6-luna`, `thinking: medium` — frontmatter is authoritative
+in pi-subagents, so the orchestrating model cannot pick another model for a
+subagent. Linked into `~/.pi/agent/agents/`; a project-local
+`.pi/agents/<name>.md` still wins.
 Skills are provided by those packages, not vendored here.
 
 ## Skills

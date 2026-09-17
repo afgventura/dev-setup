@@ -81,6 +81,11 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   link "$REPO/pi/extensions/no-mesh.ts" "$HOME/.pi/agent/extensions/no-mesh.ts"
   link "$REPO/pi/extensions/guard-search.ts" "$HOME/.pi/agent/extensions/guard-search.ts"
   link "$REPO/pi/extensions/tmux-window-name" "$HOME/.pi/agent/extensions/tmux-window-name"
+  # one catch-all subagent type, model pinned; pi-subagents' built-ins are off
+  mkdir -p "$HOME/.pi/agent/agents"
+  link "$REPO/pi/agents/general-purpose.md" "$HOME/.pi/agent/agents/general-purpose.md"
+  S="$HOME/.pi/agent/subagents.json"
+  if [ -f "$S" ]; then jq -s '.[0] * .[1]' "$S" "$REPO/pi/subagents.json" > "$S.tmp" && mv "$S.tmp" "$S"; else cp "$REPO/pi/subagents.json" "$S"; fi
   echo "   pi packages install on first run from settings.json → packages"
 fi
 
