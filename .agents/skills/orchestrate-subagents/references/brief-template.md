@@ -92,6 +92,28 @@ pinned to the behaviour rather than incidental.
 > behaviour, and a shipping guard whose test would have passed while broken.
 > Review now carries that weight alone, so read the hunks harder.
 
+## Run scripts cheaply
+<Include this block verbatim in every brief that runs repository scripts.>
+
+Scripts go through `pnpm script:run` (the `/script-runtime` rule) — but not
+through `pnpm gsm-run` on every call. `gsm-run` lists ~600 Secret Manager
+secrets and reads ~270 of them each time it starts (~5 s and ~1.3 s CPU with
+its pnpm layer), and a loop that wraps every script in it spends more CPU on
+secret fetches than on the work. Fetch once per shell, then run scripts bare:
+
+```bash
+eval "$(pnpm gsm-run --export)"        # once; secrets live in this shell only
+pnpm script:run scripts/a.ts -- …       # no gsm-run per call
+pnpm script:run scripts/b.ts -- …
+```
+
+Never `pnpm exec tsx …` or `bun …` a script directly: it skips the runner's
+telemetry and, on a worktree behind main, re-pays tsx's 10 s planner-hub load
+per process. Rebase your worktree onto main before starting a loop so it has
+the bun-hosted runner (`e7063c76d1`). Measured 2026-09-17: 12 concurrent
+`esbuild`/`node` processes from replay loops held the director's machine at
+load 28 on 10 cores.
+
 ## Finalize every code change
 After **every** code change you make in this worktree, run `/finalize-change`.
 Not only the last one — each change, including a fix you make in response to my
