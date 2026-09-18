@@ -36,16 +36,17 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const apply = async () => {
-		publish();
+	publish();
 		if (!hasUI) return;
 		if (applying) {
 			dirty = true;
 			return;
 		}
 		applying = (async () => {
+			try {
 			do {
 				dirty = false;
-				const cur = await pi.exec("tmux", ["display-message", "-p", "-t", process.env.TMUX_PANE ?? "", "#{window_name}"]);
+			const cur = await pi.exec("tmux", ["display-message", "-p", "-t", process.env.TMUX_PANE ?? "", "#{window_name}"]);
 				if (cur.code !== 0) return;
 				const base = cur.stdout.trim().replace(MARKER_RE, "");
 				const m = marker();
@@ -54,20 +55,29 @@ export default function (pi: ExtensionAPI) {
 					await pi.exec("tmux", ["rename-window", "-t", process.env.TMUX_PANE ?? "", next]);
 				}
 			} while (dirty);
+			} catch {
+				// a stale ctx after /reload or session replacement, or tmux gone:
+				// the tab marker is cosmetic, never let it take the session down
+			}
 		})().finally(() => {
 			applying = null;
 		});
 		await applying;
 	};
 
-	waits.l.add(() => void apply());
+	// One listener slot shared across instances: after /reload the previous
+	// instance's closure would otherwise keep firing with a stale `pi`.
+	const g = globalThis as { __piTabStatusListener?: () => void };
+	if (g.__piTabStatusListener) waits.l.delete(g.__piTabStatusListener);
+	g.__piTabStatusListener = () => void apply();
+	waits.l.add(g.__piTabStatusListener);
 
 	// Only the interactive parent owns the tab: pi-subagents' in-process child
 	// sessions fire agent_start/agent_end too, and have no UI bound.
 	const owns = (ctx: ExtensionContext) => ctx.hasUI;
 
-	pi.on("session_start", async (_e, ctx) => {
-		if (!owns(ctx)) return;
+pi.on("session_start", async (_e, ctx) => {
+	if (!owns(ctx)) return;
 		hasUI = true;
 		await apply();
 	});
@@ -96,12 +106,12 @@ export default function (pi: ExtensionAPI) {
 		else waits.m.delete(`sub:${id}`);
 		void apply();
 	};
-	pi.events.on("subagents:created", (ev: unknown) => sub(ev, true));
+pi.events.on("subagents:created", (ev: unknown) => sub(ev, true));
 	pi.events.on("subagents:started", (ev: unknown) => sub(ev, true));
 	pi.events.on("subagents:completed", (ev: unknown) => sub(ev, false));
 	pi.events.on("subagents:failed", (ev: unknown) => sub(ev, false));
 
-	pi.registerCommand("waiting", {
+pi.registerCommand("waiting", {
 		description: "Show what would wake this session while it is idle (loop, wake-up, tasks, subagents)",
 		handler: async (_args, ctx) => {
 			const rows = [...waits.m.values()];

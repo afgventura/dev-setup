@@ -180,6 +180,16 @@ check at startup (~0.8 s); run `pi update` yourself now and then.
 it a bare model name like `gpt-5.6-luna` — which AGENTS.md tells subagents to
 use — resolved to opencode-go's copy and was billed there instead of to the
 ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
+`opencode-go-2` is opencode-go again under a second API key (Keychain item
+`haloai-shell:OPENCODE_GO_2_API_KEY`, read with `!security …` at request time),
+mirroring the models we use so two accounts can be billed separately. Note the
+Responses-API models (muse-spark, gpt-5.6-luna) store encrypted reasoning items
+that are bound to the key that issued them: changing a provider's key under a
+running session yields `reasoning encrypted_content was not issued to this
+caller`. pi only replays those items when provider *and* model match, so the
+fix is to switch the session to the other provider id (`/model
+opencode-go-2/<same model>`), which drops the stale items — never swap the key
+in place.
 `self-hosted/z-ai/glm-5.3-flash` is our own GLM 5.3 Flash behind the sgl-router
 gateway (`http://10.184.0.50:9000/v1`, GKE ILB over Tailscale, $0). Its key is
 read from Keychain at request time (`apiKey: "!security find-generic-password
