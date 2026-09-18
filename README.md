@@ -109,6 +109,7 @@ agent-notifier/           Swift source + build script for the notifier app
 claude/hooks.json         hook entries merged into ~/.claude/settings.json
 codex/config.snippet.toml notify hook + shared Chrome MCP over HTTP
 ssh/config.snippet        ControlMaster for github.com (fetch 3.2 s → 1.2 s)
+launchd/                  vite-watchdog: kills agent-started Vite dev servers every 5 s
 pi/                       pi coding agent: settings, models (context window), MCP servers, extensions
 infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 .agents/skills/           agent skills (.claude/skills/* are symlinks to them, for Claude Code)
@@ -122,6 +123,19 @@ infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 - MCP tokens for pi are read from env vars named in `pi/mcp.json`
   (`bearerTokenEnv`) — keep secrets in the Keychain and export them from your
   shell rc, e.g. `export X="$(security find-generic-password -a "$USER" -s "haloai-shell:X" -w)"`.
+
+## Guards (this machine only, not the repo)
+
+`claude/guard-search.sh` is the PreToolUse hook for Claude Code and Codex, and
+`pi/extensions/guard-search.ts` the same rules for pi. Besides the slow-search
+rules it refuses local dev servers: any `vite`/`vite dev`/`--host`/`--port`,
+`pnpm dev`, or a command that sets `HALOAI_ALLOW_VITE_DEV` (the escape hatch
+`apps/web/vite.config.ts` names in its own error, which agents read and use).
+`scripts/generate-routes.sh` and `apps/wifi-e2e/scripts/dev-server.sh` stay
+allowed by name. A hook only sees command text, so `tmux/vite-watchdog.sh`
+(launchd `com.gery.vite-watchdog`, every 5 s) kills any Vite dev server whose
+ancestry isn't one of those two scripts — `vite build`/`preview` are left
+alone. Kills are logged to `~/.local/state/vite-watchdog.log`.
 
 ## pi
 

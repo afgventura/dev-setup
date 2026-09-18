@@ -22,9 +22,16 @@ if [ "$what" = all ] || [ "$what" = terminal ]; then
 
   say "tmux"
   link "$REPO/tmux/tmux.conf" "$HOME/.tmux.conf"
-  for f in ui.conf ghostty-ui.sh sidebar.sh sidebar-list.sh sidebar-refresh.sh sidebar-click.sh sidebar-pos.sh sidebar-nav.sh sidebar-redraw.sh open-url.sh copy-release.sh agent-notify.sh selftest.sh clicktest.py; do
+  for f in ui.conf ghostty-ui.sh sidebar.sh sidebar-list.sh sidebar-refresh.sh sidebar-click.sh sidebar-pos.sh sidebar-nav.sh sidebar-redraw.sh open-url.sh copy-release.sh agent-notify.sh vite-watchdog.sh selftest.sh clicktest.py; do
     link "$REPO/tmux/$f" "$HOME/.config/tmux/$f"
   done
+
+  say "vite watchdog (launchd, every 5 s: kills agent-started Vite dev servers)"
+  mkdir -p "$HOME/Library/LaunchAgents"
+  P="$HOME/Library/LaunchAgents/com.gery.vite-watchdog.plist"
+  sed "s|HOME_PLACEHOLDER|$HOME|" "$REPO/launchd/com.gery.vite-watchdog.plist" > "$P"
+  launchctl bootout "gui/$(id -u)/com.gery.vite-watchdog" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "$P"
 
   say "ghostty"
   mkdir -p "$HOME/.config/ghostty"

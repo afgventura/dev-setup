@@ -24,4 +24,15 @@ if printf '%s' "$bare" | grep -Eq '(^|[;&|(]|\s)find\s+[^|;&]*' && ! printf '%s'
   echo "blocked: find walks node_modules and every worktree. Use fd (respects .gitignore): fd 'name' path  — or the Glob tool. (find with -maxdepth 0-2 is allowed.)" >&2
   exit 2
 fi
+# Local Vite dev servers are disabled on this machine: apps/web/vite.config.ts
+# refuses `vite dev` without HALOAI_ALLOW_VITE_DEV=1, and agents that read the
+# error simply set the variable. Refuse the variable and the serve forms here;
+# ~/.config/tmux/vite-watchdog.sh kills anything that still slips through. The
+# two legitimate callers (route generation, wifi-e2e) set the variable inside
+# their own scripts, so invoking those scripts by name still works.
+if printf '%s' "$bare" | grep -Eq 'HALOAI_ALLOW_VITE_DEV|(^|[;&|(]|\s)(npx\s+|pnpm\s+(exec\s+)?|bunx\s+|bun\s+x\s+)?vite(\s+(dev|serve|--host|--port|--open)|\s*$|\s*[;&|])|(^|[;&|(]|\s)pnpm(\s+(-F|--filter)\s+\S+)?\s+(run\s+)?dev(\s|$)' \
+   && ! printf '%s' "$bare" | grep -Eq 'scripts/generate-routes\.sh|wifi-e2e/scripts/dev-server\.sh'; then
+  echo "blocked: local dev servers are disabled on this machine (device-hygiene). Validate on https://staging.haloai.co.id or production via Chrome MCP; for a build use \`vite build\`. HALOAI_ALLOW_VITE_DEV is reserved for scripts/generate-routes.sh and apps/wifi-e2e/scripts/dev-server.sh — a server started any other way is killed by the watchdog." >&2
+  exit 2
+fi
 exit 0
