@@ -225,8 +225,13 @@ async function renameCurrentTmuxWindow(
 ): Promise<boolean> {
   if (!process.env.TMUX) return false;
 
+  // tab-status.ts prefixes the tab with "⋯" (working) / "◔" (waiting); a
+  // rename that lands mid-turn must keep it or the tab reads as idle.
+  const marker = (globalThis as { __piTabMarker?: string }).__piTabMarker;
+  const titled = marker ? `${marker} ${name}` : name;
+
   try {
-    const result = await pi.exec("tmux", buildRenameWindowArgs(name, targetWindow));
+    const result = await pi.exec("tmux", buildRenameWindowArgs(titled, targetWindow));
     return result.code === 0;
   } catch {
     return false;

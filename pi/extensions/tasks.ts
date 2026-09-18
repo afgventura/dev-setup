@@ -25,6 +25,20 @@ import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
+// What this session is waiting on while idle — read by tab-status.ts, which
+// marks the tmux tab "◔" so an idle-but-armed session is distinguishable from
+// one that is simply done. Kept on globalThis: extensions load as separate
+// modules and must not import each other through the ~/.pi symlinks.
+const waits = ((globalThis as any).__piWaits ??= { m: new Map<string, string>(), l: new Set<() => void>() }) as {
+	m: Map<string, string>;
+	l: Set<() => void>;
+};
+const setWait = (key: string, label?: string): void => {
+	if (label) waits.m.set(key, label);
+	else waits.m.delete(key);
+	for (const f of waits.l) f();
+};
+
 type Task = {
 	id: string;
 	kind: "run" | "watch";
@@ -73,6 +87,7 @@ export default function (pi: ExtensionAPI) {
 		if (task.notified) return;
 		task.notified = true;
 		ctx.ui.setStatus(`task:${task.id}`, undefined);
+		setWait(`task:${task.id}`);
 		await pi.sendMessage(
 			{
 				customType: "task-notification",
@@ -97,6 +112,7 @@ export default function (pi: ExtensionAPI) {
 		const task: Task = { id, kind: "run", command, cwd, log, started: Date.now(), status: "running", proc };
 		tasks.set(id, task);
 		ctx.ui.setStatus(`task:${id}`, ctx.ui.theme.fg("accent", `⧗ ${id}`));
+		setWait(`task:${id}`, `run ${id}`);
 
 		const killer = setTimeout(() => {
 			if (task.status !== "running") return;
@@ -126,6 +142,7 @@ export default function (pi: ExtensionAPI) {
 		const task: Task = { id, kind: "watch", command, cwd, log, started: Date.now(), status: "running", pattern };
 		tasks.set(id, task);
 		ctx.ui.setStatus(`task:${id}`, ctx.ui.theme.fg("accent", `👁 ${id}`));
+		setWait(`task:${id}`, `watch ${id}`);
 		const re = pattern ? new RegExp(pattern, "m") : undefined;
 		let polls = 0;
 		let busy = false;
@@ -288,6 +305,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params, _s, _u, ctx) {
 			const msg = stopTask(params.id);
 			ctx.ui.setStatus(`task:${params.id}`, undefined);
+			setWait(`task:${params.id}`);
 			return { content: [{ type: "text", text: msg }], details: {} };
 		},
 	});
@@ -299,6 +317,7 @@ export default function (pi: ExtensionAPI) {
 			if (verb === "stop" && id) {
 				ctx.ui.notify(stopTask(id), "info");
 				ctx.ui.setStatus(`task:${id}`, undefined);
+				setWait(`task:${id}`);
 				return;
 			}
 			ctx.ui.notify(listTasks(), "info");

@@ -18,6 +18,20 @@
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+// What this session is waiting on while idle — read by tab-status.ts, which
+// marks the tmux tab "◔" so an idle-but-armed session is distinguishable from
+// one that is simply done. Kept on globalThis: extensions load as separate
+// modules and must not import each other through the ~/.pi symlinks.
+const waits = ((globalThis as any).__piWaits ??= { m: new Map<string, string>(), l: new Set<() => void>() }) as {
+	m: Map<string, string>;
+	l: Set<() => void>;
+};
+const setWait = (key: string, label?: string): void => {
+	if (label) waits.m.set(key, label);
+	else waits.m.delete(key);
+	for (const f of waits.l) f();
+};
+
 type Loop = { prompt: string; ms: number; label: string; timer: NodeJS.Timeout; runs: number };
 
 function parseInterval(raw: string): number | null {
@@ -38,11 +52,12 @@ export default function (pi: ExtensionAPI) {
 		clearInterval(loop.timer);
 		loop = undefined;
 		ctx.ui.setStatus("loop", undefined);
+		setWait("loop");
 		return true;
 	};
 
 	let wakeup: { timer: NodeJS.Timeout; at: number; prompt: string; reason: string } | undefined;
-	const clearWakeup = () => { if (wakeup) { clearTimeout(wakeup.timer); wakeup = undefined; } };
+	const clearWakeup = () => { if (wakeup) { clearTimeout(wakeup.timer); wakeup = undefined; } setWait("wakeup"); };
 	const dynamicLoopPrompt = (task: string) =>
 		`/loop (dynamic, self-paced) — task:\n${task}\n\n` +
 		`You are in a self-paced loop. Do one pass of the task now. Then, at the END of this and every later turn, call ` +
@@ -104,6 +119,7 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			loop = { prompt, ms, label: intervalRaw, runs: 0, timer: setInterval(fire, ms) };
+			setWait("loop", `loop ${intervalRaw}`);
 			ctx.ui.notify(`loop started: every ${intervalRaw} — /loop stop to end`, "info");
 			fire();
 		},
@@ -161,12 +177,14 @@ export default function (pi: ExtensionAPI) {
 			const at = Date.now() + delay * 1000;
 			const timer = setTimeout(() => {
 				wakeup = undefined;
+				setWait("wakeup");
 				ctx.ui.setStatus("wakeup", undefined);
 				const text = `[wake-up${reason ? ` — ${reason}` : ""}]\n${prompt}`;
 				if (ctx.isIdle()) pi.sendUserMessage(text);
 				else pi.sendUserMessage(text, { deliverAs: "followUp" });
 			}, delay * 1000);
 			wakeup = { timer, at, prompt, reason };
+			setWait("wakeup", `wake-up ${new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
 			ctx.ui.setStatus("wakeup", ctx.ui.theme.fg("accent", `⏰ ${new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${reason ? ` · ${reason}` : ""}`));
 			return {
 				content: [{ type: "text", text: `wake-up scheduled in ${delay >= 3600 ? `${(delay / 3600).toFixed(1)}h` : `${delay}s`} (${new Date(at).toLocaleString()}). Nothing more to do now — end your turn; you will be re-invoked with the prompt.` }],
@@ -195,6 +213,7 @@ export default function (pi: ExtensionAPI) {
 				else pi.sendUserMessage(loop.prompt, { deliverAs: "followUp" });
 			};
 			loop = { prompt: params.prompt, ms, label: params.interval, runs: 0, timer: setInterval(fire, ms) };
+			setWait("loop", `loop ${params.interval}`);
 			ctx.ui.setStatus("loop", ctx.ui.theme.fg("accent", `↻ ${params.interval} #0`));
 			return { content: [{ type: "text", text: `loop started: every ${params.interval}. First run fires in ${params.interval}; end your turn.` }], details: {} };
 		},
