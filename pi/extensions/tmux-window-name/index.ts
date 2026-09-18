@@ -101,6 +101,12 @@ function compactSessionName(value: string, minWords = SESSION_WORD_MIN): string 
   return name.slice(0, SESSION_CHAR_MAX).trim() || undefined;
 }
 
+// pi-subagents names a child session `<agent>#<first 8 chars of its id>`
+// (agent-runner.ts: `${baseSessionName}#${agentId.slice(0, 8)}`).
+function isSubagentSessionName(name: string | undefined): boolean {
+  return !!name && /#[0-9a-f]{8}$/i.test(name);
+}
+
 function cleanGeneratedValue(value: string): string {
   return value.replace(/^[\s"'`]+|[\s"'`]+$/g, "").trim();
 }
@@ -522,19 +528,24 @@ export default function tmuxWindowNameExtension(pi: ExtensionAPI) {
     handler: renameFromBranch,
   });
 
+  // pi-subagents runs subagents in-process: each child session binds every
+  // extension and carries its own name (`general-purpose#3f8a8d01`), so these
+  // handlers fire again inside the same tmux window and would rename the tab
+  // after the child, and reset the parent's "already named" state. A child
+  // session has no UI bound (`hasUI` is false); only the interactive parent
+  // owns the tab name. Headless `pi -p` runs lose auto-naming too, which is
+  // fine — those windows are transient.
+  const ownsTab = (ctx: ExtensionContext): boolean => ctx.hasUI && !isSubagentSessionName(pi.getSessionName());
+
   pi.on("session_start", async (_event, ctx) => {
+    if (!ownsTab(ctx)) return;
     resetSessionState();
     await restoreExistingSessionName(ctx);
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
+    if (!ownsTab(ctx)) return;
     const firstPrompt = getFirstUserPrompt(ctx.sessionManager.getBranch()) ?? event.prompt;
-
-    if (ctx.hasUI) {
-      void applyAutoName(firstPrompt, ctx);
-      return;
-    }
-
-    await applyAutoName(firstPrompt, ctx);
+    void applyAutoName(firstPrompt, ctx);
   });
 }
