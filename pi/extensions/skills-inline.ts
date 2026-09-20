@@ -104,7 +104,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// ── "/" picker anywhere in the line ──────────────────────────────
-	const MID = /(^|\s)\/([a-z0-9-]*)$/; // "/partial" token right before the cursor
+	// A skill mention may be inserted after prose or punctuation, as long as it
+	// is not part of a path/word. The match is anchored at the cursor because
+	// autocomplete only completes the token immediately before the cursor.
+	const MID = /(^|[^\p{L}\p{N}_/])\/([a-z0-9-]*)$/u; // "/partial" token before the cursor
 	const items = (prefix: string): AutocompleteItem[] =>
 		[...byName.keys()]
 			.filter((n) => n.startsWith(prefix))
@@ -142,9 +145,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// pi-tui refuses "/" as an auto-trigger character (it reserves it for
-	// line-start slash commands), so the popup would only ever open on Tab.
-	// Let the editor treat a mid-line "/" after whitespace like "@": rebuild
-	// its trigger set and patterns with "/" included.
+	// line-start slash commands). Force it into the editor trigger set and use
+	// the same inline boundary as MID, so the picker opens after prose and
+	// punctuation instead of only when the line starts with "/".
 	const proto = Editor.prototype as any;
 	if (!proto.__skillsInlinePatched) {
 		proto.__skillsInlinePatched = true;
@@ -152,12 +155,13 @@ export default function (pi: ExtensionAPI) {
 		const esc = (v: string) => v.replace(/[\\^$.*+?()[\]{}|-]/g, "\\$&");
 		proto.setAutocompleteTriggerCharacters = function (chars: string[]) {
 			orig.call(this, chars);
-			if (!chars.includes("/")) return;
-			const next: string[] = [...this.autocompleteTriggerCharacters, "/"];
+			const next: string[] = [...new Set([...this.autocompleteTriggerCharacters, "/"])];
 			this.autocompleteTriggerCharacters = next;
-			this.autocompleteTriggerPattern = new RegExp(`(?:^|[\\s])[${next.map(esc).join("")}][^\\s]*$`);
+			const generic = `(?:^|[\\s])[${next.map(esc).join("")}][^\\s]*$`;
+			const inlineSkill = String.raw`(?:^|[^\p{L}\p{N}_/])/[a-z0-9-]*$`;
+			this.autocompleteTriggerPattern = new RegExp(`(?:${generic}|${inlineSkill})`, "u");
 			const noAt = next.filter((c) => c !== "@").map(esc);
-			this.autocompleteDebouncePattern = new RegExp(`(?:^|[ \\t])(?:@(?:"[^"]*|[^\\s]*)|[${noAt.join("")}][^\\s]*)$`);
+			this.autocompleteDebouncePattern = new RegExp(`(?:^|[ \\t])(?:@(?:"[^"]*|[^\\s]*)|[${noAt.join("")}][^\\s]*)$|${inlineSkill}`, "u");
 		};
 	}
 
