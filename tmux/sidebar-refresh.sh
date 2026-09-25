@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 exec 2>/dev/null   # any output or non-zero exit makes tmux pop a "returned N" view in the user's pane
 unset TMUX   # always address the default ("main") server, not the outer ui one
@@ -11,7 +11,15 @@ unset TMUX   # always address the default ("main") server, not the outer ui one
 # first caller holds a lock and reloads while a "dirty" flag keeps being set;
 # every other caller just sets the flag and exits.
 SOCK="${TMPDIR:-/tmp}/tmux-sidebar-$UID.sock"
-[ -S "$SOCK" ] || exit 0
+if [ ! -S "$SOCK" ]; then
+  # fzf can outlive its own listen socket (it is killed, or a stale socket file
+  # blocked a respawn's bind). The sidebar keeps rendering, so nothing looks
+  # broken -- but every refresh past this point is a silent no-op and the ▶
+  # stops following the active tab while clicks still switch tabs. Kill the
+  # orphaned fzf; sidebar.sh's loop respawns it and re-creates the socket.
+  pkill -f "fzf --listen=$SOCK" 2>/dev/null
+  exit 0
+fi
 LIST="$HOME/.config/tmux/sidebar-list.sh"
 CACHE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.rows"     # last rows sent to fzf (sidebar-pos.sh reads it too)
 POS="${TMPDIR:-/tmp}/tmux-sidebar-$UID.pos"        # "pos(N)" for the active tab in $CACHE (fzf's load handler cats it)
@@ -42,9 +50,13 @@ refresh() {  # only bother fzf when the rows actually changed
 SETTLE="${TMPDIR:-/tmp}/tmux-sidebar-$UID.settle"
 
 touch "$DIRTY"
-# a lock left behind by a killed run must not wedge the sidebar forever
+# a lock left behind by a killed run must not wedge the sidebar forever.
+# NB: EPOCHSECONDS is bash 5+ only, and tmux invokes this script under
+# /bin/bash 3.2 (its server PATH has no /opt/homebrew/bin), where it is empty
+# -- which made `age` a large negative number, so this guard never fired.
 if [ -d "$LOCK" ]; then
-  age=$(( EPOCHSECONDS - $(stat -f %m "$LOCK" || echo "$EPOCHSECONDS") ))   # fallback if it vanished under us
+  now=$(date +%s)
+  age=$(( now - $(stat -f %m "$LOCK" 2>/dev/null || echo "$now") ))   # fallback if it vanished under us
   [ "$age" -gt 5 ] && rmdir "$LOCK" 2>/dev/null
 fi
 while :; do

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Left-hand tab list for the "main" tmux session, rendered with fzf as a
 # pure display (no input line, no key/mouse handling). Clicks are handled
 # by the outer tmux (ui.conf → sidebar-click.sh); refreshes arrive over the
@@ -15,6 +15,14 @@ rm -f "$SOCK"
 while :; do
   # If main is gone, wait for it to come back.
   if ! tmux has-session -t main 2>/dev/null; then sleep 1; continue; fi
+  # Drop the previous socket before EVERY launch, not just the first one.
+  # fzf unlinks its socket on a clean exit, but not when it is killed -- and a
+  # leftover file makes the next `--listen` bind fail. When that happened the
+  # old fzf had already created the path and a dying one unlinked it out from
+  # under the new process, so the sidebar kept rendering while its socket was
+  # unreachable: every refresh silently no-op'd and the ▶ stopped tracking the
+  # active tab, even though clicking still switched tabs.
+  rm -f "$SOCK"
   "$LIST" | tee "$CACHE" | fzf \
     --listen="$SOCK" \
     --no-input --layout=reverse --no-info --no-separator --no-scrollbar \

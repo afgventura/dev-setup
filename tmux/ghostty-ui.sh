@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Ghostty's `command`. Layout:
 #   ┌────────┬──────────────────────────┐
 #   │ TABS   │  tmux session "main"     │
@@ -24,8 +24,18 @@ if ! "$TMUX_BIN" -L ui has-session -t ui 2>/dev/null; then
   [ "${COLS:-0}" -gt 40 ] || { COLS=200; ROWS=50; }
   "$TMUX_BIN" -L ui -f "$CFG/ui.conf" new-session -d -s ui -x "${COLS:-200}" -y "${ROWS:-50}" \
     "while :; do TMUX= $TMUX_BIN new-session -A -s main; sleep 0.5; done"
-  "$TMUX_BIN" -L ui split-window -t ui -hb -l "$SIDEBAR_WIDTH" -c "$HOME" "exec $CFG/sidebar.sh"
-  "$TMUX_BIN" -L ui select-pane -t ui:.1
+  # Record the two pane ids as we build the layout, then publish them as tmux
+  # options. ui.conf matches on pane_id everywhere, so the sidebar keeps
+  # working no matter which pane lands on which index. Hardcoding an index
+  # here is what broke it before: the config assumed sidebar=0/content=1 while
+  # the live server had sidebar=1/content=2, so clicks and the focus redirect
+  # silently did nothing and the sidebar's `fzf --no-input` ate the keyboard.
+  CONTENT_PANE=$("$TMUX_BIN" -L ui display-message -p -t ui '#{pane_id}')
+  SIDEBAR_PANE=$("$TMUX_BIN" -L ui split-window -t ui -hb -l "$SIDEBAR_WIDTH" -c "$HOME" \
+    -P -F '#{pane_id}' "exec $CFG/sidebar.sh")
+  "$TMUX_BIN" -L ui set -g @sidebar "$SIDEBAR_PANE"
+  "$TMUX_BIN" -L ui set -g @content "$CONTENT_PANE"
+  "$TMUX_BIN" -L ui select-pane -t "$CONTENT_PANE"
 fi
 
 exec "$TMUX_BIN" -L ui attach -t ui
