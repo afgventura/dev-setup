@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Acceptance test for the Ghostty + tmux sidebar setup. Quits/relaunches
 # Ghostty, drives the exact byte sequences the ⌘ shortcuts send, simulates
 # sidebar clicks, and checks the result. Run: ~/.config/tmux/selftest.sh

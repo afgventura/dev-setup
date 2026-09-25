@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Emits the sidebar rows: "<target>\t<display>" per line (ANSI allowed).
 #   target = "@<window_id>"      a tab in the main session
 #          = ""                  a group header (not clickable)

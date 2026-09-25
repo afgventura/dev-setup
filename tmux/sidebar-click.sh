@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Outer-tmux mouse handler: a left click at row $1 of the sidebar pane.
 # Screen rows 0-1 are fzf's top margin, 2-3 the "TABS" header (+ blank line);
 # then each list row takes two screen rows (item, then a --gap line).

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # fzf `transform` helper: prints the action that moves the cursor to the
 # active tab's row. Normally sidebar-refresh.sh has already computed this for
 # the rows it just sent (and sent it in the same request); this only has to

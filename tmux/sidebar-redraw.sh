@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Repaint the sidebar after the Ghostty window is resized or regains focus
 # (switching macOS Spaces does both). The tab list sometimes came back blank
 # — only the TABS header — until the next reload; fzf had been resized twice

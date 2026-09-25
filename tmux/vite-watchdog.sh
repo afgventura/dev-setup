@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Kill any local Vite dev server an agent starts, however it was started.
 #
 # apps/web/vite.config.ts refuses `vite dev` unless HALOAI_ALLOW_VITE_DEV=1,

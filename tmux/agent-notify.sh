@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # macOS notification (posted BY GHOSTTY, via the OSC 777 escape sequence)
 # when an AI agent finishes a turn or needs input.
 #   Claude Code hook (Stop / Notification): JSON on stdin

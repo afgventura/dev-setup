@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # ⌘⇧U: pick a URL from the current pane's visible text (+ recent scrollback)
 # and open it. Ghostty can't do ⌘-click link detection while tmux has the
 # mouse (only ⇧⌘-click works), so this is the keyboard route.

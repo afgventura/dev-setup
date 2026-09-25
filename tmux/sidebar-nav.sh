@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # ⌘⇧] / ⌘⇧[ : next / previous tab IN SIDEBAR ORDER (grouped by folder), not
 # tmux's window-index order, which would jump around between groups.
 #   sidebar-nav.sh next|prev

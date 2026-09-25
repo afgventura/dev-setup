@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Mouse-drag release in copy mode. tmux ends a mouse selection *before* the
 # cell under the cursor (it draws that cell in the cursor colour but does not
 # copy it), so dragging to the last character of a URL copied all but that
