@@ -153,6 +153,16 @@ exits), `watch` (poll a command until its output matches a regex / exits 0,
 then wake the agent), `task_output`, `task_stop`; `/tasks` and
 `/watch [every 30s] [until <regex>] <cmd>` for humans. Logs live in
 `~/.pi/agent/tasks/`.
+`pi/extensions/goal.ts` is the session goal, modelled on Codex's per-thread goal:
+`/goal [<objective>|clear|edit|pause|resume]` plus the `create_goal` /
+`update_goal` / `get_goal` tools, one goal per session, kept as a `goal` entry
+on the session branch so it survives resume and follows `/tree`. While a goal is
+active it asks for one more turn each time a run settles — Codex's goal
+continuation — stopping on complete / blocked / paused / budget-limited, or
+after `PI_GOAL_MAX_CONTINUATIONS` (50) automatic turns without user input. It
+replaces `pi-goal-x`, whose goals lived in the project (`.pi/goals/`) and were
+shared by every session there, so each session had to be pointed at one with
+`/goal-focus`.
 `pi/extensions/skills-inline.ts` lets a prompt reference any number of skills
 anywhere in the text, Claude Code style (`per /repo-safety and /testing, …`);
 pi's own `/skill:name` only works as the first word and takes one skill. The

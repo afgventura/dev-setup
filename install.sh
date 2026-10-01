@@ -84,6 +84,7 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   done
   link "$REPO/pi/extensions/loop.ts" "$HOME/.pi/agent/extensions/loop.ts"
   link "$REPO/pi/extensions/tasks.ts" "$HOME/.pi/agent/extensions/tasks.ts"
+  link "$REPO/pi/extensions/goal.ts" "$HOME/.pi/agent/extensions/goal.ts"
   link "$REPO/pi/extensions/skills-inline.ts" "$HOME/.pi/agent/extensions/skills-inline.ts"
   link "$REPO/pi/extensions/no-mesh.ts" "$HOME/.pi/agent/extensions/no-mesh.ts"
   link "$REPO/pi/extensions/guard-search.ts" "$HOME/.pi/agent/extensions/guard-search.ts"
