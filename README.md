@@ -145,8 +145,15 @@ alone. Kills are logged to `~/.local/state/vite-watchdog.log`.
 `latest` on every `pi update`, so pin it and bump it deliberately. 5.x is the
 line that reads pi's own `mcp.json` instead of warning that it "no longer reads"
 it; 3.x warned on every start and pi 1.0.0 cannot silence that. 4.0.0+ also
-defaults `mcpScript` off, so `~/.pi/agent/mcp-adapter.json` carries
-`settings.scriptMode: true` to keep it.
+defaults `mcpScript` off, so `pi/mcp-adapter.json` (merged into
+`~/.pi/agent/mcp-adapter.json`) carries `settings.scriptMode: true` to keep it.
+`pi/patches/quiet-extension-warnings.mjs` is linked to `~/.pi/agent/patches/` and
+run by `install.sh pi`: it ports the fork's `quietExtensionWarnings` gate into the
+installed dist, because upstream pi 1.0.0 has no such setting and always renders
+startup diagnostics, so its extension-manifest warnings cannot be silenced any
+other way. `pi update` reinstalls the package and drops the patch — re-run the
+script (or `./install.sh pi`).
+
 `pi/extensions/loop.ts` adds `/loop [interval] <prompt>` like Claude Code's:
 with an interval it fires on a fixed schedule; without one it is a self-paced
 loop where the agent picks each delay by calling `schedule_wakeup` (30 s–24 h,

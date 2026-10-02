@@ -76,8 +76,8 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   say "pi coding agent"
   command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
   mkdir -p "$HOME/.pi/agent/extensions"
-  # settings/mcp are copied (pi rewrites them); extension is linked
-  for f in settings.json mcp.json models.json; do
+  # config files are copied (pi rewrites them); extensions are linked
+  for f in settings.json mcp.json mcp-adapter.json models.json; do
     if [ -f "$HOME/.pi/agent/$f" ]; then
       jq -s '.[0] * .[1]' "$HOME/.pi/agent/$f" "$REPO/pi/$f" > "$HOME/.pi/agent/$f.tmp" && mv "$HOME/.pi/agent/$f.tmp" "$HOME/.pi/agent/$f"
     else cp "$REPO/pi/$f" "$HOME/.pi/agent/$f"; fi
@@ -96,6 +96,11 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   link "$REPO/pi/agents/general-purpose.md" "$HOME/.pi/agent/agents/general-purpose.md"
   S="$HOME/.pi/agent/subagents.json"
   if [ -f "$S" ]; then jq -s '.[0] * .[1]' "$S" "$REPO/pi/subagents.json" > "$S.tmp" && mv "$S.tmp" "$S"; else cp "$REPO/pi/subagents.json" "$S"; fi
+  # The globally installed pi has no `quietExtensionWarnings` setting (the fork does), so startup
+  # warns about extension manifests pi cannot fix. Patch the installed dist; re-run after a pi update.
+  link "$REPO/pi/patches/quiet-extension-warnings.mjs" "$HOME/.pi/agent/patches/quiet-extension-warnings.mjs"
+  node "$HOME/.pi/agent/patches/quiet-extension-warnings.mjs" ||
+    echo "   quiet-extension-warnings: not applied (this pi is not a version the patch knows) — re-port it"
   echo "   pi packages install on first run from settings.json → packages"
 fi
 
