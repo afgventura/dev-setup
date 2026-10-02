@@ -141,8 +141,12 @@ alone. Kills are logged to `~/.local/state/vite-watchdog.log`.
 
 `pi/settings.json` lists the packages pi installs on first run
 (`cc-my-pi`, `pi-mcp-adapter`, `pi-subagents` — required by cc-my-pi's `TaskExecute`, ralph loop, …).
-`pi-mcp-adapter` is pinned (`@3.2.0`) because an unpinned entry resolves to npm's
-`latest` on every `pi update`: it silently jumped the adapter two majors to 5.x.
+`pi-mcp-adapter` is pinned to `^5.0.0`: an unpinned entry resolves to npm's
+`latest` on every `pi update`, so pin it and bump it deliberately. 5.x is the
+line that reads pi's own `mcp.json` instead of warning that it "no longer reads"
+it; 3.x warned on every start and pi 1.0.0 cannot silence that. 4.0.0+ also
+defaults `mcpScript` off, so `~/.pi/agent/mcp-adapter.json` carries
+`settings.scriptMode: true` to keep it.
 `pi/extensions/loop.ts` adds `/loop [interval] <prompt>` like Claude Code's:
 with an interval it fires on a fixed schedule; without one it is a self-paced
 loop where the agent picks each delay by calling `schedule_wakeup` (30 s–24 h,
