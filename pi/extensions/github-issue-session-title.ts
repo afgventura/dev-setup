@@ -2,8 +2,10 @@
  * GitHub issue session title.
  *
  * When the first prompt of a session contains a GitHub issue (or pull request)
- * link, name the session after that issue's title — so the footer, terminal
- * title and session picker all show the ticket instead of an unnamed session.
+ * link, name the session `#123 <issue title>` — so the footer, terminal title
+ * and session picker all show which ticket the session is about instead of an
+ * unnamed session. Pull requests are prefixed `PR #123` so they do not read as
+ * issues.
  *
  * This listens on `input`, not `before_agent_start`, on purpose. `input` runs
  * first and is awaited, so by the time tmux-window-name's `before_agent_start`
@@ -59,13 +61,16 @@ export function parseIssueRef(text: string): IssueRef | undefined {
 
 /**
  * A session name lands verbatim in the terminal title (`pi - <name> - <cwd>`),
- * the footer and the session picker, so flatten it to one bounded line.
+ * the footer and the session picker, so flatten it to one bounded line and keep
+ * the id in front where it is scannable.
  */
-export function toSessionName(title: string): string | undefined {
+export function toSessionName(title: string, ref: IssueRef): string | undefined {
 	const cleaned = title.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
 	if (!cleaned) return undefined;
-	if (cleaned.length <= NAME_MAX_CHARS) return cleaned;
-	return `${cleaned.slice(0, NAME_MAX_CHARS - 1).trimEnd()}…`;
+
+	const name = `${ref.kind === "pull" ? "PR " : ""}#${ref.number} ${cleaned}`;
+	if (name.length <= NAME_MAX_CHARS) return name;
+	return `${name.slice(0, NAME_MAX_CHARS - 1).trimEnd()}…`;
 }
 
 /** True while the branch has not recorded a user message yet (pre-first-prompt). */
@@ -142,16 +147,13 @@ export default function githubIssueSessionTitle(pi: ExtensionAPI) {
 		inFlight = true;
 		try {
 			const title = await fetchIssueTitle(pi, ref);
-			const name = title ? toSessionName(title) : undefined;
+			const name = title ? toSessionName(title, ref) : undefined;
 			// The fetch is slow enough that something else can name the session
 			// meanwhile — a manual /name, or another extension. First writer wins.
 			if (!name || pi.getSessionName()) return;
 
 			pi.setSessionName(name);
-			if (ctx.hasUI) {
-				const kind = ref.kind === "pull" ? "PR" : "issue";
-				ctx.ui.notify(`Session named from ${kind} #${ref.number}: ${name}`, "info");
-			}
+			if (ctx.hasUI) ctx.ui.notify(`Session named ${name}`, "info");
 		} finally {
 			inFlight = false;
 		}
