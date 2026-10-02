@@ -37,5 +37,6 @@
     "opencode-go-2/gpt-5.6-luna"
   ],
   "tuiMode": "fullscreen",
-  "fullscreenExitOutput": "resume-hint"
+  "fullscreenExitOutput": "resume-hint",
+  "fullscreenWheelScrollLines": 5
 }

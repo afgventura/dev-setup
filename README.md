@@ -236,10 +236,14 @@ will wake it (a `/loop` or `schedule_wakeup` timer, a `background_run`/`watch`
 task, a background subagent), bare `name` = done until you type. `/waiting`
 lists what is armed. loop.ts and tasks.ts publish their armed state through a
 `globalThis.__piWaits` registry; subagents come from pi-subagents' events.
-`pi/extensions/wheel.ts` sets the fullscreen mouse-wheel step to 5 lines per
-event — the same step as tmux copy-mode in other panes (pi hard-codes 1 and repaints the whole screen per event — upstream #9052
-/ #9549 — which is why a trackpad flick lagged); `/wheel N` tunes it, Alt still
-multiplies by 5.
+`fullscreenWheelScrollLines` is 5 in `pi/settings.json` — the same step as tmux
+copy-mode in other panes, Alt+wheel still multiplies by 5. `pi/extensions/wheel.ts`
+used to force that by wrapping `TuiAltScreen.routeWheel`, from when pi hard-coded
+1 line per event and repainted the whole screen per event (upstream #9052 / #9549).
+1.0.0 took the knob natively — `fullscreenWheelScrollLines`, settable in
+`/settings` — and widened `routeWheel` to `(event, delta)`, so the one-argument
+wrapper passed an undefined delta and the transcript stopped scrolling altogether.
+The extension is gone.
 `~/.pi/settings.json` has `claudeHeaderEnabled: false` — cc-my-pi's startup
 banner instantiates every extension a second time (a throwaway loader just to
 count them), which left remote-pi bound to a dead API and broke `/remote-pi pair`;
