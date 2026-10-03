@@ -250,7 +250,21 @@ and exits on its own, taking its tool processes with it.
 | `notifyBatchMs` | 1500 | completions in this window become one notification |
 
 Children keep their own session file under `<sessionDir>/<id>/`, which is what to read when an
-agent's returned summary is not enough. On another machine: clone this repo and run
+agent's returned summary is not enough.
+
+**Spend.** The agent list header shows the tokens the agents have spent and the
+**combined** cost — the session's own spend plus every subagent's — and `/agents` breaks
+it down line by line (`session $X + agents $Y = $Z`, with tokens each side). The session
+side is summed from `ctx.sessionManager.getEntries()`, since pi records a priced `usage`
+on each entry and gives extensions no session total directly; the agent side is the child
+processes' own usage, which are not in those entries. Per-agent tokens and cost appear in
+the widget rows, `/agents` rows, and the notification box.
+
+Note this is only as real as the model catalogue's rates: `pi/models.json` currently
+prices the `byteplus` models at **0 for every rate**, so cost reads `$0.00` for the
+session and the agents alike (which is what the footer's `$0.00` has been). Token counts
+are exact regardless; fill in the rates and the dollar figures become real without any
+further change. On another machine: clone this repo and run
 `install.sh pi`, or copy the single `pi-subagents-local.ts` plus `pi/subagents-local.json`
 into that host's agent dir — nothing else is required.
 

@@ -88,7 +88,47 @@ interface Tracked {
 	endedAt?: number;
 	toolCalls: number;
 	tool?: string;
+	/** Tokens and cost for this run, as reported by its own model calls. */
+	usage?: AgentUsage;
 	transcript?: string;
+}
+
+interface AgentUsage {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cost: number;
+}
+
+function tokensOf(usage: AgentUsage | undefined): number {
+	return usage ? usage.input + usage.output : 0;
+}
+
+/** 12400 -> "12.4k", so a token count fits a narrow column. */
+function formatTokens(count: number): string {
+	if (count < 1000) return String(count);
+	if (count < 1_000_000) return `${(count / 1000).toFixed(1)}k`;
+	return `${(count / 1_000_000).toFixed(2)}M`;
+}
+
+function formatCost(usd: number): string {
+	if (usd <= 0) return "$0.00";
+	return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
+}
+
+function asUsage(value: unknown): AgentUsage | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const record = value as Record<string, unknown>;
+	const num = (key: string): number =>
+		typeof record[key] === "number" ? (record[key] as number) : 0;
+	return {
+		input: num("input"),
+		output: num("output"),
+		cacheRead: num("cacheRead"),
+		cacheWrite: num("cacheWrite"),
+		cost: num("cost"),
+	};
 }
 
 function elapsedSeconds(agent: Tracked): number {
@@ -104,6 +144,49 @@ export default function (pi: ExtensionAPI) {
 	let ctx: ExtensionContext | undefined;
 	let tick: ReturnType<typeof setInterval> | undefined;
 	let sessionName: string | undefined;
+
+	/** Tokens and cost across every run this view has seen. */
+	function agentTotals(): { tokens: number; cost: number } {
+		let tokens = 0;
+		let cost = 0;
+		for (const agent of agents.values()) {
+			tokens += tokensOf(agent.usage);
+			cost += agent.usage?.cost ?? 0;
+		}
+		return { tokens, cost };
+	}
+
+	/**
+	 * What the session itself has spent, read from its own entries: pi records a
+	 * `usage` on each, priced from the model catalogue. Extensions get no session
+	 * total directly, so it is summed here. Children are separate processes and are
+	 * not in these entries — that is what `agentTotals` adds on top.
+	 */
+	function sessionSpend(): { tokens: number; cost: number } {
+		try {
+			let tokens = 0;
+			let cost = 0;
+			for (const entry of ctx?.sessionManager.getEntries() ?? []) {
+				const usage = (entry as { usage?: Record<string, unknown> }).usage;
+				if (!usage) continue;
+				const input = typeof usage.input === "number" ? usage.input : 0;
+				const output = typeof usage.output === "number" ? usage.output : 0;
+				tokens += input + output;
+				const entryCost = usage.cost;
+				if (typeof entryCost === "number") cost += entryCost;
+				else if (entryCost && typeof entryCost === "object") {
+					for (const value of Object.values(
+						entryCost as Record<string, unknown>,
+					)) {
+						if (typeof value === "number") cost += value;
+					}
+				}
+			}
+			return { tokens, cost };
+		} catch {
+			return { tokens: 0, cost: 0 };
+		}
+	}
 
 	/** A one-line label, cut to the room the row has left for it. */
 	function labelFor(agent: Tracked, budget: number): string {
@@ -182,11 +265,14 @@ export default function (pi: ExtensionAPI) {
 						sessionName && sessionName.length > 40
 							? `${sessionName.slice(0, 39)}\u2026`
 							: sessionName;
+					const totals = agentTotals();
+					const combined = totals.cost + sessionSpend().cost;
+					const spend = `${totals.tokens > 0 ? ` \u00b7 ${formatTokens(totals.tokens)} tok` : ""} \u00b7 ${formatCost(combined)}`;
 					const rule = Math.max(4, width - " agents ".length - 2);
 					const lines = [
 						`${theme.fg("dim", "\u2500\u2500")}${theme.fg("accent", " agents ")}${theme.fg("dim", "\u2500".repeat(rule))}`,
 						truncateToWidth(
-							`${theme.fg("accent", "\u2726")}${theme.fg("dim", ` ${summary}${name ? ` \u00b7 ${name}` : ""}`)}`,
+							`${theme.fg("accent", "\u2726")}${theme.fg("dim", ` ${summary}${spend}${name ? ` \u00b7 ${name}` : ""}`)}`,
 							width,
 						),
 					];
@@ -199,9 +285,10 @@ export default function (pi: ExtensionAPI) {
 							8,
 							width - before.length - after.length - 1,
 						);
+						const tokens = tokensOf(agent.usage);
 						lines.push(
 							truncateToWidth(
-								`${theme.fg("muted", before)}${theme.fg("text", labelFor(agent, budget))}${theme.fg("dim", after)}`,
+								`${theme.fg("muted", before)}${theme.fg("text", labelFor(agent, budget))}${theme.fg("dim", after)}${tokens > 0 ? theme.fg("dim", `  ${formatTokens(tokens)} tok`) : ""}`,
 								width,
 							),
 						);
@@ -274,24 +361,31 @@ export default function (pi: ExtensionAPI) {
 			id?: string;
 			tool?: string;
 			toolCalls?: number;
+			usage?: unknown;
 		};
 		if (typeof data.id !== "string") return;
 		track(data.id, {
 			tool: typeof data.tool === "string" ? data.tool : undefined,
 			toolCalls:
 				typeof data.toolCalls === "number" ? data.toolCalls : undefined,
+			usage: asUsage(data.usage),
 		});
 		render();
 	});
 
 	const finish = (status: Tracked["status"]) => (raw: unknown) => {
-		const data = (raw ?? {}) as { id?: string; transcript?: string };
+		const data = (raw ?? {}) as {
+			id?: string;
+			transcript?: string;
+			usage?: unknown;
+		};
 		if (typeof data.id !== "string") return;
 		track(data.id, {
 			status,
 			endedAt: Date.now(),
 			transcript:
 				typeof data.transcript === "string" ? data.transcript : undefined,
+			usage: asUsage(data.usage),
 		});
 		render();
 	};
@@ -324,7 +418,13 @@ export default function (pi: ExtensionAPI) {
 				.replace(/\s+/g, " ")
 				.trim();
 			const shown = options.expanded ? result : result.slice(0, 160);
-			let row = `  ${icon} ${theme.fg("accent", id)} ${theme.fg("dim", `${status} in ${seconds}s, ${tools} tool${tools === 1 ? "" : "s"}`)}`;
+			const usage = asUsage(entry.usage);
+			const tokens = tokensOf(usage);
+			const spend =
+				tokens > 0 || (usage?.cost ?? 0) > 0
+					? `, ${formatTokens(tokens)} tok, ${formatCost(usage?.cost ?? 0)}`
+					: "";
+			let row = `  ${icon} ${theme.fg("accent", id)} ${theme.fg("dim", `${status} in ${seconds}s, ${tools} tool${tools === 1 ? "" : "s"}${spend}`)}`;
 			if (shown)
 				row += `\n    ${shown}${!options.expanded && result.length > shown.length ? theme.fg("dim", " \u2026 ctrl+o to expand") : ""}`;
 			if (entry.transcript)
@@ -364,10 +464,21 @@ export default function (pi: ExtensionAPI) {
 							: agent.status === "queued"
 								? "\u2026"
 								: "\u2717";
-				return `${icon} ${agent.id.slice(0, 8)}  ${labelFor(agent, 44)}  ${agent.status}  ${elapsedSeconds(agent).toFixed(0)}s  ${agent.toolCalls} tools`;
+				const tokens = tokensOf(agent.usage);
+				const cost = agent.usage?.cost ?? 0;
+				const spend =
+					tokens > 0 || cost > 0
+						? `  ${formatTokens(tokens)} tok  ${formatCost(cost)}`
+						: "";
+				return `${icon} ${agent.id.slice(0, 8)}  ${labelFor(agent, 44)}  ${agent.status}  ${elapsedSeconds(agent).toFixed(0)}s  ${agent.toolCalls} tools${spend}`;
 			});
+			const spent = agentTotals();
+			const session = sessionSpend();
 			context.ui.notify(
-				`${activeAgents().length} active of ${all.length} runs\n${lines.join("\n")}`,
+				`${activeAgents().length} active of ${all.length} runs\n` +
+					`spend: session ${formatCost(session.cost)} + agents ${formatCost(spent.cost)} = ${formatCost(session.cost + spent.cost)} ` +
+					`(${formatTokens(session.tokens)} + ${formatTokens(spent.tokens)} tok)\n` +
+					lines.join("\n"),
 				"info",
 			);
 		},

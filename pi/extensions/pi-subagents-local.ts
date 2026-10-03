@@ -277,11 +277,48 @@ function messageText(message: unknown): string {
 	return parts.join("\n");
 }
 
+/**
+ * Token usage and cost for one run. pi reports cost as four components (each in
+ * USD), priced from the model catalogue, so they are summed into one figure.
+ */
+interface AgentUsage {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cost: number;
+}
+
+function emptyUsage(): AgentUsage {
+	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+}
+
 interface UsageLike {
-	inputTokens?: number;
-	outputTokens?: number;
 	input?: number;
 	output?: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+	cost?:
+		| number
+		| {
+				input?: number;
+				output?: number;
+				cacheRead?: number;
+				cacheWrite?: number;
+		  };
+}
+
+function costOf(cost: UsageLike["cost"]): number {
+	if (typeof cost === "number") return cost;
+	if (!cost) return 0;
+	return (
+		(cost.input ?? 0) +
+		(cost.output ?? 0) +
+		(cost.cacheRead ?? 0) +
+		(cost.cacheWrite ?? 0)
+	);
 }
 
 /**
@@ -483,7 +520,7 @@ interface Run {
 	agent?: ChildAgent;
 	assistantText: string;
 	toolCalls: number;
-	usage: { inputTokens: number; outputTokens: number };
+	usage: AgentUsage;
 	stopRequested: boolean;
 	/** Last tool the agent called, for the live view. */
 	lastTool?: string;
@@ -759,7 +796,7 @@ export default function (pi: ExtensionAPI) {
 			status: "queued",
 			assistantText: "",
 			toolCalls: 0,
-			usage: { inputTokens: 0, outputTokens: 0 },
+			usage: emptyUsage(),
 			stopRequested: false,
 		});
 		queue.push(id);
@@ -977,6 +1014,8 @@ export default function (pi: ExtensionAPI) {
 						id: run.id,
 						tool: run.lastTool,
 						toolCalls: run.toolCalls,
+						// So a view can show tokens/cost for a run that is still going.
+						usage: run.usage,
 					});
 					return;
 				}
@@ -1054,6 +1093,7 @@ export default function (pi: ExtensionAPI) {
 				durationMs,
 				toolCalls: run.toolCalls,
 				transcript,
+				usage: run.usage,
 			});
 		} else {
 			pi.events.emit("subagents:failed", {
@@ -1086,6 +1126,7 @@ export default function (pi: ExtensionAPI) {
 			durationMs,
 			toolCalls: run.toolCalls,
 			transcript,
+			usage: run.usage,
 			error,
 		});
 		if (finishedRuns.size > FINISHED_RUN_HISTORY) {
@@ -1172,8 +1213,11 @@ type RunStatus = "queued" | "running" | "completed" | "failed" | "stopped";
 
 function accumulateUsage(run: Run, usage: UsageLike | undefined): void {
 	if (!usage) return;
-	run.usage.inputTokens += usage.inputTokens ?? usage.input ?? 0;
-	run.usage.outputTokens += usage.outputTokens ?? usage.output ?? 0;
+	run.usage.input += usage.inputTokens ?? usage.input ?? 0;
+	run.usage.output += usage.outputTokens ?? usage.output ?? 0;
+	run.usage.cacheRead += usage.cacheRead ?? 0;
+	run.usage.cacheWrite += usage.cacheWrite ?? 0;
+	run.usage.cost += costOf(usage.cost);
 }
 
 async function withTimeout<T>(
