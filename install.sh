@@ -98,6 +98,7 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   link "$REPO/pi/extensions/guard-search.ts" "$PI_AGENT/extensions/guard-search.ts"
   link "$REPO/pi/extensions/tab-status.ts" "$PI_AGENT/extensions/tab-status.ts"
   link "$REPO/pi/extensions/pi-subagents-local.ts" "$PI_AGENT/extensions/pi-subagents-local.ts"
+  link "$REPO/pi/extensions/pi-subagents-ui.ts" "$PI_AGENT/extensions/pi-subagents-ui.ts"
   link "$REPO/pi/extensions/tmux-window-name" "$PI_AGENT/extensions/tmux-window-name"
   # one catch-all subagent type, model pinned; the old in-process engines are off.
   # Subagents run as slim child pi processes via extensions/pi-subagents-local.ts,

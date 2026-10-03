@@ -16,8 +16,10 @@
  *                              options}                     -> data {id}
  *   in   subagents:rpc:stop   {requestId, agentId}          -> data {}
  *   out  subagents:ready      {}
- *   out  subagents:completed  {id, result}
- *   out  subagents:failed     {id, error, result, status, durationMs, toolCalls, usage}
+ *   out  subagents:spawned    {id, type, prompt, model, startedAt}
+ *   out  subagents:activity   {id, tool, toolCalls}
+ *   out  subagents:completed  {id, result, type, durationMs, toolCalls, transcript}
+ *   out  subagents:failed     {id, error, result, status, type, durationMs, toolCalls, transcript, usage}
  * Replies go to `<channel>:reply:<requestId>` as {success, data?|error?}.
  *
  * Children are driven over pi's documented `--mode rpc` JSONL protocol
@@ -64,7 +66,10 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Type } from "typebox";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 const PROTOCOL_VERSION = 2;
 const DEFAULT_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"];
@@ -76,6 +81,8 @@ const REQUEST_TIMEOUT_MS = 60_000;
 const KILL_GRACE_MS = 5_000;
 /** How many finished runs stay answerable through `get_subagent_result`. */
 const FINISHED_RUN_HISTORY = 50;
+/** Default window that turns a burst of completions into one notification. */
+const DEFAULT_NOTIFY_BATCH_MS = 1_500;
 
 /** Live child ids, so a test can assert every child is torn down. */
 export const liveRunIds = new Set<string>();
@@ -97,6 +104,13 @@ interface Config {
 	fallbackSubagent?: string;
 	/** Honour agent type definitions (model, thinking, tools, prompt). */
 	agentTypes: boolean;
+	/**
+	 * When to wake the orchestrator with a completion notification:
+	 * "always" (default), "errors" (only failed/stopped), or "off".
+	 */
+	notify: "always" | "errors" | "off";
+	/** Completions inside one window become a single notification, not one turn each. */
+	notifyBatchMs: number;
 }
 
 function agentDir(): string {
@@ -128,6 +142,8 @@ function loadConfig(): Config {
 		sessionDir: join(tmpdir(), "pi-subagents-local"),
 		extraArgs: [],
 		agentTypes: true,
+		notify: "always",
+		notifyBatchMs: DEFAULT_NOTIFY_BATCH_MS,
 	};
 	for (const path of [join(agentDir(), "subagents.json"), configPath()]) {
 		try {
@@ -183,6 +199,16 @@ function applyConfig(config: Config, raw: Record<string, unknown>): void {
 	if (typeof raw.agentsDir === "string" && raw.agentsDir.length > 0)
 		config.agentsDir = raw.agentsDir;
 	if (typeof raw.agentTypes === "boolean") config.agentTypes = raw.agentTypes;
+	if (
+		raw.notify === "always" ||
+		raw.notify === "errors" ||
+		raw.notify === "off"
+	) {
+		config.notify = raw.notify;
+	}
+	if (typeof raw.notifyBatchMs === "number" && raw.notifyBatchMs >= 0) {
+		config.notifyBatchMs = raw.notifyBatchMs;
+	}
 }
 
 /**
@@ -292,6 +318,10 @@ class ChildAgent {
 			cwd: this.cwd,
 			env: process.env,
 			stdio: ["pipe", "pipe", "pipe"],
+			// Its own process group, so stopping the agent can stop the work it
+			// started too (a build, a test run, a long bash). Killing only the
+			// agent leaves those running as orphans.
+			detached: process.platform !== "win32",
 		});
 		this.child = child;
 
@@ -400,6 +430,25 @@ class ChildAgent {
 	}
 
 	/** SIGTERM, then SIGKILL if the child does not go away. Resolves when it is gone. */
+	/** Signal the child's whole process group, falling back to the child alone. */
+	private signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+		const pid = child.pid;
+		if (pid && process.platform !== "win32") {
+			try {
+				// Negative pid targets the group the child leads (detached above).
+				process.kill(-pid, signal);
+				return;
+			} catch {
+				// Group already gone, or no group: fall through.
+			}
+		}
+		try {
+			child.kill(signal);
+		} catch {
+			// Already dead.
+		}
+	}
+
 	async stop(): Promise<void> {
 		const child = this.child;
 		if (!child || this.stopping) return;
@@ -408,11 +457,11 @@ class ChildAgent {
 		const gone = new Promise<void>((resolve) => {
 			child.once("exit", () => resolve());
 			setTimeout(() => {
-				child.kill("SIGKILL");
+				this.signalGroup(child, "SIGKILL");
 				resolve();
 			}, KILL_GRACE_MS).unref();
 		});
-		child.kill("SIGTERM");
+		this.signalGroup(child, "SIGTERM");
 		await gone;
 	}
 }
@@ -429,6 +478,8 @@ interface Run {
 	toolCalls: number;
 	usage: { inputTokens: number; outputTokens: number };
 	stopRequested: boolean;
+	/** Last tool the agent called, for the live view. */
+	lastTool?: string;
 	/** Unblocks the in-flight wait when the run is stopped from outside. */
 	settle?: () => void;
 }
@@ -499,6 +550,76 @@ export default function (pi: ExtensionAPI) {
 	const queue: string[] = [];
 	let active = 0;
 	let shuttingDown = false;
+	let latestCtx: ExtensionContext | undefined;
+	let notifyTimer: ReturnType<typeof setTimeout> | undefined;
+	const notifyQueue: Array<Record<string, unknown>> = [];
+
+	pi.on("session_start", async (_event, ctx) => {
+		latestCtx = ctx;
+	});
+
+	/**
+	 * Wake the orchestrator when agents finish. A burst (a fan-out landing
+	 * together) is collapsed into a single message so N agents cost one turn
+	 * rather than N — the old engine sent one notification per agent.
+	 */
+	function queueNotification(entry: Record<string, unknown>): void {
+		if (config.notify === "off") return;
+		if (config.notify === "errors" && entry.status === "completed") return;
+		notifyQueue.push(entry);
+		if (notifyTimer) return;
+		notifyTimer = setTimeout(() => {
+			notifyTimer = undefined;
+			void flushNotifications();
+		}, config.notifyBatchMs);
+		notifyTimer.unref?.();
+	}
+
+	async function flushNotifications(): Promise<void> {
+		const batch = notifyQueue.splice(0, notifyQueue.length);
+		if (batch.length === 0) return;
+		const one = batch.length === 1 ? (batch[0] as { id?: string }) : undefined;
+		const heading =
+			batch.length === 1 && one?.id
+				? `subagent ${one.id} finished`
+				: `${batch.length} subagents finished`;
+		const lines = batch.map((entry) => {
+			const id = String(entry.id ?? "?");
+			const type = String(entry.type ?? "agent");
+			const status = String(entry.status ?? "completed");
+			const seconds = (Number(entry.durationMs ?? 0) / 1000).toFixed(1);
+			const tools = Number(entry.toolCalls ?? 0);
+			const result = String(entry.result ?? "").trim();
+			return (
+				`- ${id} (${type}) ${status} in ${seconds}s, ${tools} tool call${tools === 1 ? "" : "s"}` +
+				(result
+					? `\n  result: ${result.length > 1200 ? `${result.slice(0, 1200)}\u2026` : result}`
+					: "") +
+				(entry.transcript ? `\n  transcript: ${String(entry.transcript)}` : "")
+			);
+		});
+		const content =
+			`[subagent-notification] ${heading}\n${lines.join("\n")}\n\n` +
+			"Act on these results. Use get_subagent_result with an agent id for the full result of any of them.";
+		try {
+			const options =
+				latestCtx && !latestCtx.isIdle()
+					? { triggerTurn: true, deliverAs: "followUp" as const }
+					: { triggerTurn: true };
+			await pi.sendMessage(
+				{
+					customType: "subagent-notification",
+					content,
+					display: true,
+					details: { heading, agents: batch },
+				},
+				options,
+			);
+		} catch {
+			// A host that cannot deliver messages (headless) still keeps the results
+			// in the task store and get_subagent_result.
+		}
+	}
 
 	function reply(
 		channel: string,
@@ -566,6 +687,14 @@ export default function (pi: ExtensionAPI) {
 		// Answered immediately: the caller gets an id and the outcome arrives later
 		// as subagents:completed / :failed.
 		replyOk("subagents:rpc:spawn", requestId, { id });
+		// Announced for UI/observability consumers; the task layer only needs the reply.
+		pi.events.emit("subagents:spawned", {
+			id,
+			type: params.type ?? fallbackAgentType(),
+			prompt: params.prompt,
+			model: config.model,
+			startedAt: Date.now(),
+		});
 		void pump();
 	});
 
@@ -757,6 +886,13 @@ export default function (pi: ExtensionAPI) {
 				}
 				if (event.type === "tool_execution_start") {
 					run.toolCalls++;
+					const tool = (event as { toolName?: string }).toolName;
+					if (typeof tool === "string") run.lastTool = tool;
+					pi.events.emit("subagents:activity", {
+						id: run.id,
+						tool: run.lastTool,
+						toolCalls: run.toolCalls,
+					});
 					return;
 				}
 				if (event.type === "agent_end") {
@@ -829,13 +965,16 @@ export default function (pi: ExtensionAPI) {
 			pi.events.emit("subagents:completed", {
 				id: run.id,
 				result: withPointer(result ?? ""),
+				type: run.type,
 				durationMs,
 				toolCalls: run.toolCalls,
+				transcript,
 			});
 		} else {
 			pi.events.emit("subagents:failed", {
 				id: run.id,
 				status,
+				type: run.type,
 				error:
 					error ??
 					(status === "stopped"
@@ -844,6 +983,7 @@ export default function (pi: ExtensionAPI) {
 				result: withPointer(result ?? ""),
 				durationMs,
 				toolCalls: run.toolCalls,
+				transcript,
 				usage: run.usage,
 			});
 		}
@@ -852,6 +992,16 @@ export default function (pi: ExtensionAPI) {
 			transcript,
 			status,
 			finishedAt: Date.now(),
+		});
+		queueNotification({
+			id: run.id,
+			type: run.type,
+			status,
+			result: result ?? "",
+			durationMs,
+			toolCalls: run.toolCalls,
+			transcript,
+			error,
 		});
 		if (finishedRuns.size > FINISHED_RUN_HISTORY) {
 			const oldest = finishedRuns.keys().next().value;

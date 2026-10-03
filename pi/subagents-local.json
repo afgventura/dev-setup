@@ -1,6 +1,16 @@
 {
-  "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"],
+  "tools": [
+    "read",
+    "grep",
+    "find",
+    "ls",
+    "bash",
+    "edit",
+    "write"
+  ],
   "maxConcurrent": 16,
   "timeoutMs": 1800000,
-  "extensions": false
+  "extensions": false,
+  "ui": true,
+  "notify": "always"
 }

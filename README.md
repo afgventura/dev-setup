@@ -196,6 +196,25 @@ against a cap of 16 held **exactly 16 concurrent children** (largest 140 MB) and
 no orphan and frees its slot; a live session's `TaskExecute` ran a child end to end.
 `pi/subagents-local.json` (merged into the agent dir by `install.sh`) sets:
 
+**You can see them, and they tell you when they are done.** `pi/extensions/pi-subagents-ui.ts`
+draws what is running above the editor, a status line, `/agents`, and the completion
+notification box. It is event-driven: it repaints when an agent starts, reports tool
+activity, or finishes, and the only timer is a 1s tick that exists *while* agents run (for
+the elapsed column) and is cleared the moment none are. The old engine repainted a full
+frame every 80ms regardless — 12.5 layout passes a second on the session's only thread.
+
+Completion notifications come from the engine, not the UI, so they work even headless: a
+finished agent produces a `[subagent-notification]` message that **starts a turn** when the
+session is idle (or queues as a follow-up when it is busy), so the orchestrator learns the
+result without polling — verified in a live session, where the model read the box and
+reported the parallelism evidence itself. A burst is collapsed into one message, so 16
+agents cost one turn rather than 16. `notify`: `always` (default) | `errors` only | `off`.
+
+Lifecycle: children are spawned in their own process group, so stopping an agent stops the
+work it started too (a build, a test run) — verified by PID. A clean parent exit stops every
+child; and if the parent is `SIGKILL`ed (no handler can run), the child sees its stdin close
+and exits on its own, taking its tool processes with it.
+
 | key | default | meaning |
 | --- | --- | --- |
 | `tools` | read, grep, find, ls, bash, edit, write | tools each child gets |
@@ -208,6 +227,11 @@ no orphan and frees its slot; a live session's `TaskExecute` ran a child end to 
 | `extraArgs` | `[]` | appended last, for host pi version differences |
 | `agentsDir` | `<agent dir>/agents` | where `<type>.md` agent definitions are read |
 | `agentTypes` | true | false = ignore agent definitions, always use the defaults |
+| `ui` | true | draw the widget, status line, `/agents` |
+| `uiPlacement` | `aboveEditor` | or `belowEditor` |
+| `uiMaxRows` | 6 | agent rows before collapsing |
+| `notify` | `always` | `errors` = only failed/stopped, `off` = never |
+| `notifyBatchMs` | 1500 | completions in this window become one notification |
 
 Children keep their own session file under `<sessionDir>/<id>/`, which is what to read when an
 agent's returned summary is not enough. On another machine: clone this repo and run
