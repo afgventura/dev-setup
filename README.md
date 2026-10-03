@@ -168,20 +168,49 @@ expects — `ping` returns `{version: 2}`, `spawn` returns an id and later emits
 working unchanged. Each agent is launched as:
 
 ```
-node <same pi build as the parent> --mode rpc --session-dir /tmp/pi-subagents-local/<id> \
+<command> <commandArgs> --mode rpc --session-dir <tmp>/pi-subagents-local/<id> \
   --no-extensions --no-skills --no-prompt-templates --tools read,grep,find,ls,bash,edit,write
 ```
 
-`child.entry = process.argv[1]`, so children are always the same build as the parent —
-useful because it needs no host detection and works for the fork, an npm install, or a
-checkout. Children are ~35 MB RSS instead of ~361 MB inheriting 9 MCP servers, they use
-real cores for their own JS work, and their leaks die with the process. Verified: 4 agents
-each doing `sleep 3` finished in 6.7 s with 4 concurrent child processes (serial ≥ 12 s),
-and `stop` leaves no orphan. `pi/subagents-local.json` (copied to
-`~/.pi/agent/subagents-local.json`) sets the tool list, the fan-out cap (`maxConcurrent`),
-the per-agent timeout, and whether children get extensions. Children keep their own session
-file under `/tmp/pi-subagents-local/<id>/`, which is what to read when an agent's returned
-summary is not enough.
+It drives the child over pi's documented `--mode rpc` JSONL protocol (`docs/rpc.md`) rather
+than through any host module, so it does not break when pi's internal API moves.
+
+**Portable, not pinned to one machine.** There is no hardcoded path, user, checkout or
+install layout anywhere in it:
+
+- the child command is auto-detected and overridable — unset, children are the *same* build
+  as the parent (a JS entry from `process.argv[1]` run with node, which covers a source
+  checkout, an npm install, or the global `pi` shim), falling back to `process.execPath`,
+  which is how a compiled/standalone pi re-invokes itself. Override with the config's
+  `command`/`commandArgs`, or `PI_SUBAGENTS_LOCAL_COMMAND` / `PI_SUBAGENTS_LOCAL_CLI`;
+- the config file is found at `$PI_SUBAGENTS_LOCAL_CONFIG`, else
+  `$PI_CODING_AGENT_DIR/subagents-local.json`, else `~/.pi/agent/subagents-local.json`;
+- child session files go under the OS temp dir;
+- every flag a child gets is configurable, so a host whose pi differs adjusts config instead
+  of editing the extension.
+
+Children are ~35 MB RSS instead of ~361 MB inheriting 9 MCP servers, they use real cores for
+their own JS work, and their leaks die with the process. Verified on the fork: 17 agents
+against a cap of 16 held **exactly 16 concurrent children** (largest 140 MB) and finished in
+15.1 s where serial would be ≥85 s; 4 agents doing `sleep 3` finished in 6.7 s; `stop` leaves
+no orphan and frees its slot; a live session's `TaskExecute` ran a child end to end.
+`pi/subagents-local.json` (merged into the agent dir by `install.sh`) sets:
+
+| key | default | meaning |
+| --- | --- | --- |
+| `tools` | read, grep, find, ls, bash, edit, write | tools each child gets |
+| `maxConcurrent` | 16 | fan-out cap; extras queue |
+| `timeoutMs` | 1800000 | per-agent wall-clock limit |
+| `model` / `provider` | unset | child model; unset = host default |
+| `extensions` | false | true = children also load extensions/MCP |
+| `sessionDir` | `<tmp>/pi-subagents-local` | where child sessions are written, or `null` |
+| `command` / `commandArgs` | auto | override how a child is launched |
+| `extraArgs` | `[]` | appended last, for host pi version differences |
+
+Children keep their own session file under `<sessionDir>/<id>/`, which is what to read when an
+agent's returned summary is not enough. On another machine: clone this repo and run
+`install.sh pi`, or copy the single `pi-subagents-local.ts` plus `pi/subagents-local.json`
+into that host's agent dir — nothing else is required.
 
 `pi/settings.json` lists the packages pi installs on first run
 (`cc-my-pi`, `pi-mcp-adapter`, ralph loop, …).

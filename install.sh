@@ -80,34 +80,36 @@ fi
 
 if [ "$what" = all ] || [ "$what" = pi ]; then
   say "pi coding agent"
+  # Honour pi's own override so this works on machines that do not use ~/.pi/agent.
+  PI_AGENT="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
   command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
-  mkdir -p "$HOME/.pi/agent/extensions"
+  mkdir -p "$PI_AGENT/extensions"
   # config files are copied (pi rewrites them); extensions are linked
   for f in settings.json mcp.json mcp-adapter.json models.json subagents-local.json; do
-    if [ -f "$HOME/.pi/agent/$f" ]; then
-      jq -s '.[0] * .[1]' "$HOME/.pi/agent/$f" "$REPO/pi/$f" > "$HOME/.pi/agent/$f.tmp" && mv "$HOME/.pi/agent/$f.tmp" "$HOME/.pi/agent/$f"
-    else cp "$REPO/pi/$f" "$HOME/.pi/agent/$f"; fi
+    if [ -f "$PI_AGENT/$f" ]; then
+      jq -s '.[0] * .[1]' "$PI_AGENT/$f" "$REPO/pi/$f" > "$PI_AGENT/$f.tmp" && mv "$PI_AGENT/$f.tmp" "$PI_AGENT/$f"
+    else cp "$REPO/pi/$f" "$PI_AGENT/$f"; fi
   done
-  link "$REPO/pi/extensions/loop.ts" "$HOME/.pi/agent/extensions/loop.ts"
-  link "$REPO/pi/extensions/tasks.ts" "$HOME/.pi/agent/extensions/tasks.ts"
-  link "$REPO/pi/extensions/goal.ts" "$HOME/.pi/agent/extensions/goal.ts"
-  link "$REPO/pi/extensions/skills-inline.ts" "$HOME/.pi/agent/extensions/skills-inline.ts"
-  link "$REPO/pi/extensions/no-mesh.ts" "$HOME/.pi/agent/extensions/no-mesh.ts"
-  link "$REPO/pi/extensions/guard-search.ts" "$HOME/.pi/agent/extensions/guard-search.ts"
-  link "$REPO/pi/extensions/tab-status.ts" "$HOME/.pi/agent/extensions/tab-status.ts"
-  link "$REPO/pi/extensions/pi-subagents-local.ts" "$HOME/.pi/agent/extensions/pi-subagents-local.ts"
-  link "$REPO/pi/extensions/tmux-window-name" "$HOME/.pi/agent/extensions/tmux-window-name"
+  link "$REPO/pi/extensions/loop.ts" "$PI_AGENT/extensions/loop.ts"
+  link "$REPO/pi/extensions/tasks.ts" "$PI_AGENT/extensions/tasks.ts"
+  link "$REPO/pi/extensions/goal.ts" "$PI_AGENT/extensions/goal.ts"
+  link "$REPO/pi/extensions/skills-inline.ts" "$PI_AGENT/extensions/skills-inline.ts"
+  link "$REPO/pi/extensions/no-mesh.ts" "$PI_AGENT/extensions/no-mesh.ts"
+  link "$REPO/pi/extensions/guard-search.ts" "$PI_AGENT/extensions/guard-search.ts"
+  link "$REPO/pi/extensions/tab-status.ts" "$PI_AGENT/extensions/tab-status.ts"
+  link "$REPO/pi/extensions/pi-subagents-local.ts" "$PI_AGENT/extensions/pi-subagents-local.ts"
+  link "$REPO/pi/extensions/tmux-window-name" "$PI_AGENT/extensions/tmux-window-name"
   # one catch-all subagent type, model pinned; the old in-process engines are off.
   # Subagents run as slim child pi processes via extensions/pi-subagents-local.ts,
   # which speaks the same subagents:rpc v2 protocol that cc-my-pi's tasks expect.
-  mkdir -p "$HOME/.pi/agent/agents"
-  link "$REPO/pi/agents/general-purpose.md" "$HOME/.pi/agent/agents/general-purpose.md"
-  S="$HOME/.pi/agent/subagents.json"
+  mkdir -p "$PI_AGENT/agents"
+  link "$REPO/pi/agents/general-purpose.md" "$PI_AGENT/agents/general-purpose.md"
+  S="$PI_AGENT/subagents.json"
   if [ -f "$S" ]; then jq -s '.[0] * .[1]' "$S" "$REPO/pi/subagents.json" > "$S.tmp" && mv "$S.tmp" "$S"; else cp "$REPO/pi/subagents.json" "$S"; fi
   # The globally installed pi has no `quietExtensionWarnings` setting (the fork does), so startup
   # warns about extension manifests pi cannot fix. Patch the installed dist; re-run after a pi update.
-  link "$REPO/pi/patches/quiet-extension-warnings.mjs" "$HOME/.pi/agent/patches/quiet-extension-warnings.mjs"
-  node "$HOME/.pi/agent/patches/quiet-extension-warnings.mjs" ||
+  link "$REPO/pi/patches/quiet-extension-warnings.mjs" "$PI_AGENT/patches/quiet-extension-warnings.mjs"
+  node "$PI_AGENT/patches/quiet-extension-warnings.mjs" ||
     echo "   quiet-extension-warnings: not applied (this pi is not a version the patch knows) — re-port it"
   echo "   pi packages install on first run from settings.json → packages"
 

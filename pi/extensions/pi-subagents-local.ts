@@ -1,77 +1,81 @@
 /**
- * pi-subagents-local — run subagents as slim child pi processes instead of
- * in-process SDK sessions.
+ * pi-subagents-local — run subagents as child pi processes instead of in-process
+ * SDK sessions.
  *
- * Why this exists: with @tintinweb/pi-subagents, every agent is an SDK session
- * inside the parent, so all agent bookkeeping, parsing, assembly and rendering
- * share the session's single event loop, and anything an agent leaks is retained
- * by the parent for the life of the session (a 7h session was found holding
- * 1,768 leaked socketpairs). Children here are separate processes: they get their
- * own cores, their own address space, and their leaks die when they exit.
+ * Why: with agents running inside the session, every agent shares the session's
+ * single event loop, and anything an agent leaks is retained by the parent for
+ * the life of that session (a 7h session was found holding 1,768 leaked
+ * socketpairs while burning ~25% of a core with no I/O). Children get their own
+ * cores, their own address space, and their leaks die with the process.
  *
- * This speaks the @tintinweb/pi-subagents RPC protocol (v2) over pi's event bus,
- * so cc-my-pi's task layer keeps working unchanged — nothing has to be ditched.
+ * It speaks the same `subagents:rpc` v2 protocol over pi's event bus that
+ * cc-my-pi's task layer expects, so that layer is unchanged.
  *
- * Wire contract (v2), verified against cc-my-pi/extensions/pi-tasks:
- *   in   subagents:rpc:ping   {requestId}                 -> data {version: 2}
+ *   in   subagents:rpc:ping   {requestId}                  -> data {version: 2}
  *   in   subagents:rpc:spawn  {requestId, type, prompt,
- *                              options}                    -> data {id}
- *   in   subagents:rpc:stop   {requestId, agentId}         -> data {}
+ *                              options}                     -> data {id}
+ *   in   subagents:rpc:stop   {requestId, agentId}          -> data {}
  *   out  subagents:ready      {}
  *   out  subagents:completed  {id, result}
- *   out  subagents:failed     {id, error, result, status}
+ *   out  subagents:failed     {id, error, result, status, durationMs, toolCalls, usage}
  * Replies go to `<channel>:reply:<requestId>` as {success, data?|error?}.
  *
- * Config: ~/.pi/agent/subagents-local.json, all keys optional —
- *   { "tools": [...], "model": "provider/id", "maxConcurrent": 8,
- *     "timeoutMs": 1800000, "extensions": false }
+ * Children are driven over pi's documented `--mode rpc` JSONL protocol
+ * (docs/rpc.md) rather than through any host module, so this works across pi
+ * versions and runtimes and needs no path assumptions.
+ *
+ * PORTABLE BY DESIGN — nothing here is tied to one machine, user or checkout:
+ *   - the child command is auto-detected and overridable (see resolveChildCommand);
+ *     unset, children are the *same* build as the parent, whether the parent was
+ *     started from a source checkout, an npm install, or a compiled binary;
+ *   - the config path honours PI_SUBAGENTS_LOCAL_CONFIG and PI_CODING_AGENT_DIR;
+ *   - child session files go under the OS temp dir;
+ *   - every flag the child gets is configurable, so a host whose pi differs can
+ *     adjust it instead of editing this file.
+ *
+ * Config (all optional), at PI_SUBAGENTS_LOCAL_CONFIG, else
+ * $PI_CODING_AGENT_DIR/subagents-local.json, else ~/.pi/agent/subagents-local.json:
+ *   {
+ *     "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"],
+ *     "model": "provider/model-id",       // child model; default = host default
+ *     "provider": "provider-name",
+ *     "maxConcurrent": 16,                // fan-out cap; extras queue
+ *     "timeoutMs": 1800000,               // per-agent wall-clock limit
+ *     "extensions": false,                // true = children load extensions/MCP too
+ *     "sessionDir": "<tmpdir>/pi-subagents-local",  // or null for no --session-dir
+ *     "command": "pi", "commandArgs": [], // override the child command entirely
+ *     "extraArgs": []                     // appended last, for version differences
+ *   }
  */
 
+import type { ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import {
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	readdirSync,
+	readSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-	ExtensionAPI,
-	RpcClientOptions,
-} from "@earendil-works/pi-coding-agent";
-import { RpcClient } from "@earendil-works/pi-coding-agent";
+import { createInterface } from "node:readline";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const PROTOCOL_VERSION = 2;
 const DEFAULT_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"];
-const DEFAULT_MAX_CONCURRENT = 8;
+const DEFAULT_MAX_CONCURRENT = 16;
 const DEFAULT_TIMEOUT_MS = 30 * 60_000;
+/** How long a single control request (prompt, startup) may take to be acknowledged. */
+const REQUEST_TIMEOUT_MS = 60_000;
+/** Grace period between SIGTERM and SIGKILL when stopping a child. */
+const KILL_GRACE_MS = 5_000;
 
 /** Live child ids, so a test can assert every child is torn down. */
 export const liveRunIds = new Set<string>();
-
-type RunStatus = "queued" | "running" | "completed" | "failed" | "stopped";
-
-interface RunOptions {
-	provider?: string;
-	model?: string;
-	cwd?: string;
-	tools?: string[];
-	timeoutMs?: number;
-	extensions?: boolean;
-	sessionDir?: string;
-}
-
-interface Run {
-	id: string;
-	type: string;
-	prompt: string;
-	options: RunOptions;
-	startedAt: number;
-	status: RunStatus;
-	client?: RpcClient;
-	assistantText: string;
-	toolCalls: number;
-	usage: { inputTokens: number; outputTokens: number };
-	stopRequested: boolean;
-	/** Unblocks the in-flight wait when the run is stopped from outside. */
-	settle?: () => void;
-}
 
 interface Config {
 	tools: string[];
@@ -80,6 +84,21 @@ interface Config {
 	maxConcurrent: number;
 	timeoutMs: number;
 	extensions: boolean;
+	sessionDir: string | null;
+	command?: string;
+	commandArgs?: string[];
+	extraArgs: string[];
+}
+
+function configPath(): string {
+	const explicit = process.env.PI_SUBAGENTS_LOCAL_CONFIG;
+	if (explicit && explicit.length > 0) return explicit;
+	const agentDir = process.env.PI_CODING_AGENT_DIR;
+	const base =
+		agentDir && agentDir.length > 0
+			? agentDir
+			: join(homedir(), ".pi", "agent");
+	return join(base, "subagents-local.json");
 }
 
 function loadConfig(): Config {
@@ -88,52 +107,100 @@ function loadConfig(): Config {
 		maxConcurrent: DEFAULT_MAX_CONCURRENT,
 		timeoutMs: DEFAULT_TIMEOUT_MS,
 		extensions: false,
+		sessionDir: join(tmpdir(), "pi-subagents-local"),
+		extraArgs: [],
 	};
-	const path = join(homedir(), ".pi", "agent", "subagents-local.json");
+	let raw: Record<string, unknown>;
 	try {
-		const raw = JSON.parse(readFileSync(path, "utf-8")) as Record<
+		raw = JSON.parse(readFileSync(configPath(), "utf-8")) as Record<
 			string,
 			unknown
 		>;
-		if (
-			Array.isArray(raw.tools) &&
-			raw.tools.every((t) => typeof t === "string")
-		)
-			config.tools = raw.tools as string[];
-		if (typeof raw.model === "string") config.model = raw.model;
-		if (typeof raw.provider === "string") config.provider = raw.provider;
-		if (typeof raw.maxConcurrent === "number" && raw.maxConcurrent > 0)
-			config.maxConcurrent = Math.floor(raw.maxConcurrent);
-		if (typeof raw.timeoutMs === "number" && raw.timeoutMs > 0)
-			config.timeoutMs = raw.timeoutMs;
-		if (typeof raw.extensions === "boolean") config.extensions = raw.extensions;
 	} catch {
-		// No config file, or unreadable: defaults are already correct.
+		return config; // No config file, or unreadable: defaults stand.
+	}
+	if (
+		Array.isArray(raw.tools) &&
+		raw.tools.every((t) => typeof t === "string") &&
+		raw.tools.length > 0
+	) {
+		config.tools = raw.tools as string[];
+	}
+	if (typeof raw.model === "string") config.model = raw.model;
+	if (typeof raw.provider === "string") config.provider = raw.provider;
+	if (typeof raw.maxConcurrent === "number" && raw.maxConcurrent > 0)
+		config.maxConcurrent = Math.floor(raw.maxConcurrent);
+	if (typeof raw.timeoutMs === "number" && raw.timeoutMs > 0)
+		config.timeoutMs = raw.timeoutMs;
+	if (typeof raw.extensions === "boolean") config.extensions = raw.extensions;
+	if (raw.sessionDir === null) config.sessionDir = null;
+	else if (typeof raw.sessionDir === "string" && raw.sessionDir.length > 0)
+		config.sessionDir = raw.sessionDir;
+	if (typeof raw.command === "string" && raw.command.length > 0)
+		config.command = raw.command;
+	if (
+		Array.isArray(raw.commandArgs) &&
+		raw.commandArgs.every((a) => typeof a === "string")
+	) {
+		config.commandArgs = raw.commandArgs as string[];
+	}
+	if (
+		Array.isArray(raw.extraArgs) &&
+		raw.extraArgs.every((a) => typeof a === "string")
+	) {
+		config.extraArgs = raw.extraArgs as string[];
 	}
 	return config;
 }
 
 /**
- * The CLI entry to spawn children with.
- *
- * `process.argv[1]` is how this pi was invoked, so children are the *same* build
- * as the parent — no host-identity guessing, and it works for a source checkout,
- * an npm install, or our fork. `PI_SUBAGENTS_LOCAL_CLI` overrides it (tests, and
- * hosts whose argv[1] is not a pi entry point).
+ * How to launch a child. Resolution order:
+ *   1. config `command` (+ `commandArgs`) — an explicit, host-independent choice;
+ *   2. PI_SUBAGENTS_LOCAL_COMMAND (a command) or PI_SUBAGENTS_LOCAL_CLI (a JS entry);
+ *   3. auto: a JS entry from argv[1] run with node, so children are the parent's
+ *      own build (source checkout, npm install, or the global `pi` shim);
+ *   4. auto: the running executable itself, which is how a compiled/standalone pi
+ *      is re-invoked.
+ * Nothing is hardcoded to a particular machine, user, or install layout.
  */
-function resolveCliPath(): string {
-	const override = process.env.PI_SUBAGENTS_LOCAL_CLI;
-	if (override && override.length > 0) {
-		if (!existsSync(override))
-			throw new Error(`PI_SUBAGENTS_LOCAL_CLI does not exist: ${override}`);
-		return override;
+function resolveChildCommand(config: Config): {
+	command: string;
+	commandArgs: string[];
+} {
+	if (config.command)
+		return { command: config.command, commandArgs: config.commandArgs ?? [] };
+
+	const envCommand = process.env.PI_SUBAGENTS_LOCAL_COMMAND;
+	if (envCommand && envCommand.length > 0)
+		return { command: envCommand, commandArgs: config.commandArgs ?? [] };
+
+	const entry = process.env.PI_SUBAGENTS_LOCAL_CLI ?? process.argv[1];
+	// A JS/TS entry to run with node, which covers a source checkout, an npm
+	// install, and an extension-less `pi` shim (a shebang script).
+	if (
+		entry &&
+		existsSync(entry) &&
+		(/\.(js|mjs|cjs|ts)$/.test(entry) || hasShebang(entry))
+	) {
+		return { command: "node", commandArgs: [entry] };
 	}
-	const argv1 = process.argv[1];
-	if (argv1 && /\.(js|mjs|cjs|ts)$/.test(argv1) && existsSync(argv1))
-		return argv1;
-	throw new Error(
-		`cannot resolve the pi entry point (process.argv[1] = ${String(argv1)})`,
-	);
+	// Otherwise the running executable is pi itself (compiled/standalone build).
+	return { command: process.execPath, commandArgs: [] };
+}
+
+function hasShebang(path: string): boolean {
+	try {
+		const fd = openSync(path, "r");
+		try {
+			const head = Buffer.alloc(2);
+			readSync(fd, head, 0, 2, 0);
+			return head.toString("utf-8") === "#!";
+		} finally {
+			closeSync(fd);
+		}
+	} catch {
+		return false;
+	}
 }
 
 /** Assistant text arrives as either a string or content parts, depending on the message. */
@@ -148,6 +215,194 @@ function messageText(message: unknown): string {
 			parts.push(record.text);
 	}
 	return parts.join("\n");
+}
+
+interface UsageLike {
+	inputTokens?: number;
+	outputTokens?: number;
+	input?: number;
+	output?: number;
+}
+
+/**
+ * One child pi in `--mode rpc`, driven over JSONL: requests go in on stdin as
+ * `{...command, id}`, and everything the child says comes back on stdout as
+ * either `{type:"response", id, success, data|error}` or an event line.
+ */
+class ChildAgent {
+	private child: ChildProcess | undefined;
+	private nextRequestId = 0;
+	private readonly pending = new Map<
+		string,
+		{ resolve: (value: unknown) => void; reject: (error: Error) => void }
+	>();
+	private readonly eventListeners: Array<
+		(event: Record<string, unknown>) => void
+	> = [];
+	private stderrTail = "";
+	private exited: { code: number | null; signal: string | null } | undefined;
+	private stopping = false;
+
+	private readonly command: string;
+	private readonly commandArgs: string[];
+	private readonly cwd: string;
+
+	// Fields are assigned explicitly rather than via parameter properties:
+	// this repo is erasable-TypeScript-only, and parameter properties are not.
+	constructor(command: string, commandArgs: string[], cwd: string) {
+		this.command = command;
+		this.commandArgs = commandArgs;
+		this.cwd = cwd;
+	}
+
+	start(): Promise<void> {
+		const child = spawn(this.command, this.commandArgs, {
+			cwd: this.cwd,
+			env: process.env,
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+		this.child = child;
+
+		const stdout = child.stdout;
+		if (!stdout) {
+			child.kill("SIGKILL");
+			return Promise.reject(new Error("child pi has no stdout"));
+		}
+		createInterface({ input: stdout }).on("line", (line) =>
+			this.handleLine(line),
+		);
+		child.stderr?.on("data", (data: Buffer) => {
+			this.stderrTail = (this.stderrTail + data.toString()).slice(-2_000);
+		});
+		child.once("exit", (code, signal) => {
+			if (this.exited) return;
+			this.exited = { code, signal };
+			const detail =
+				this.stderrTail.trim().length > 0
+					? `: ${this.stderrTail.trim().split("\n").slice(-3).join(" | ")}`
+					: "";
+			this.rejectPending(
+				new Error(
+					`child pi exited (code=${String(code)}, signal=${String(signal)})${detail}`,
+				),
+			);
+		});
+		child.once("error", (error) => {
+			this.rejectPending(
+				error instanceof Error ? error : new Error(String(error)),
+			);
+		});
+
+		return new Promise<void>((resolve) => {
+			if (child.pid) resolve();
+			else child.once("spawn", () => resolve());
+		});
+	}
+
+	private handleLine(line: string): void {
+		let data: Record<string, unknown>;
+		try {
+			data = JSON.parse(line) as Record<string, unknown>;
+		} catch {
+			return; // Not JSONL we understand; ignore rather than crash the run.
+		}
+		if (data.type === "response" && typeof data.id === "string") {
+			const pending = this.pending.get(data.id);
+			if (!pending) return;
+			this.pending.delete(data.id);
+			if (data.success === false)
+				pending.reject(new Error(String(data.error ?? "child command failed")));
+			else pending.resolve(data.data);
+			return;
+		}
+		for (const listener of [...this.eventListeners]) listener(data);
+	}
+
+	private rejectPending(error: Error): void {
+		for (const [id, pending] of [...this.pending]) {
+			this.pending.delete(id);
+			pending.reject(error);
+		}
+	}
+
+	request(
+		command: Record<string, unknown>,
+		timeoutMs = REQUEST_TIMEOUT_MS,
+	): Promise<unknown> {
+		const child = this.child;
+		const stdin = child?.stdin;
+		if (!stdin || stdin.destroyed)
+			return Promise.reject(new Error("child pi is not running"));
+		if (this.exited)
+			return Promise.reject(
+				new Error(`child pi exited (code=${String(this.exited.code)})`),
+			);
+		const id = `req_${++this.nextRequestId}`;
+		return new Promise<unknown>((resolve, reject) => {
+			const timer = setTimeout(() => {
+				this.pending.delete(id);
+				reject(
+					new Error(`child pi did not acknowledge ${String(command.type)}`),
+				);
+			}, timeoutMs);
+			this.pending.set(id, {
+				resolve: (value) => {
+					clearTimeout(timer);
+					resolve(value);
+				},
+				reject: (error) => {
+					clearTimeout(timer);
+					reject(error);
+				},
+			});
+			stdin.write(`${JSON.stringify({ ...command, id })}\n`);
+		});
+	}
+
+	onEvent(listener: (event: Record<string, unknown>) => void): () => void {
+		this.eventListeners.push(listener);
+		return () => {
+			const index = this.eventListeners.indexOf(listener);
+			if (index >= 0) this.eventListeners.splice(index, 1);
+		};
+	}
+
+	/** SIGTERM, then SIGKILL if the child does not go away. Resolves when it is gone. */
+	async stop(): Promise<void> {
+		const child = this.child;
+		if (!child || this.stopping) return;
+		this.stopping = true;
+		if (this.exited || child.exitCode !== null) return;
+		const gone = new Promise<void>((resolve) => {
+			child.once("exit", () => resolve());
+			setTimeout(() => {
+				child.kill("SIGKILL");
+				resolve();
+			}, KILL_GRACE_MS).unref();
+		});
+		child.kill("SIGTERM");
+		await gone;
+	}
+}
+
+interface Run {
+	id: string;
+	type: string;
+	prompt: string;
+	options: Record<string, unknown>;
+	startedAt: number;
+	status: "queued" | "running" | "completed" | "failed" | "stopped";
+	agent?: ChildAgent;
+	assistantText: string;
+	toolCalls: number;
+	usage: { inputTokens: number; outputTokens: number };
+	stopRequested: boolean;
+	/** Unblocks the in-flight wait when the run is stopped from outside. */
+	settle?: () => void;
+}
+
+function asString(value: unknown): string | undefined {
+	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -190,7 +445,7 @@ export default function (pi: ExtensionAPI) {
 			requestId?: string;
 			type?: string;
 			prompt?: string;
-			options?: RunOptions;
+			options?: Record<string, unknown>;
 		};
 		const { requestId } = params;
 		if (typeof requestId !== "string") return;
@@ -220,8 +475,8 @@ export default function (pi: ExtensionAPI) {
 			stopRequested: false,
 		});
 		queue.push(id);
-		// Spawn is answered immediately: the caller gets an id, and the outcome
-		// arrives later as a subagents:completed / :failed event.
+		// Answered immediately: the caller gets an id and the outcome arrives later
+		// as subagents:completed / :failed.
 		replyOk("subagents:rpc:spawn", requestId, { id });
 		void pump();
 	});
@@ -237,7 +492,6 @@ export default function (pi: ExtensionAPI) {
 			replyOk("subagents:rpc:stop", requestId, {});
 			return;
 		}
-		run.stopRequested = true;
 		void stopRun(run, "stopped").then(() =>
 			replyOk("subagents:rpc:stop", requestId, {}),
 		);
@@ -245,37 +499,71 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Child lifecycle ────────────────────────────────────────────────────
 
-	function buildClientOptions(run: Run): RpcClientOptions {
+	/** Where this run's child writes its session, or undefined when disabled. */
+	function sessionDirFor(run: Run): string | undefined {
 		const options = run.options;
-		const tools = options.tools ?? config.tools;
-		const sessionDir =
-			options.sessionDir ??
-			join(tmpdir(), "pi-subagents-local", run.id.slice(0, 8));
+		const root =
+			options.sessionDir === null
+				? null
+				: (asString(options.sessionDir) ?? config.sessionDir);
+		return root ? join(root, run.id.slice(0, 8)) : undefined;
+	}
+
+	/**
+	 * The child's own transcript (newest session file in its session dir). The
+	 * parent gets a pointer to it, so a thin summary can be followed up and the
+	 * orchestrator stays able to see what an agent actually did.
+	 */
+	function transcriptPathFor(run: Run): string | undefined {
+		const dir = sessionDirFor(run);
+		if (!dir) return undefined;
 		try {
-			mkdirSync(sessionDir, { recursive: true });
+			const files = readdirSync(dir).filter((name) => name.endsWith(".jsonl"));
+			if (files.length === 0) return undefined;
+			files.sort();
+			return join(dir, files[files.length - 1]);
 		} catch {
-			// Best effort: the child creates its own directory if this fails.
+			return undefined;
 		}
-		// Slim by default: no extensions (so no MCP servers are duplicated per
-		// agent), no skills, no prompt templates, and an explicit tool list.
-		const args = ["--session-dir", sessionDir];
-		if (!(options.extensions ?? config.extensions))
-			args.push("--no-extensions");
+	}
+
+	function childArgs(run: Run): string[] {
+		const options = run.options;
+		const tools =
+			Array.isArray(options.tools) &&
+			options.tools.every((t) => typeof t === "string")
+				? (options.tools as string[])
+				: config.tools;
+		const args = ["--mode", "rpc"];
+		const provider = asString(options.provider) ?? config.provider;
+		const model = asString(options.model) ?? config.model;
+		if (provider) args.push("--provider", provider);
+		if (model) args.push("--model", model);
+
+		const sessionDir = sessionDirFor(run);
+		if (sessionDir) {
+			try {
+				mkdirSync(sessionDir, { recursive: true });
+			} catch {
+				// Best effort: the child creates its own session directory.
+			}
+			args.push("--session-dir", sessionDir);
+		}
+
+		// Slim by default: no extensions, so no MCP servers are duplicated per agent.
+		const extensions =
+			typeof options.extensions === "boolean"
+				? options.extensions
+				: config.extensions;
+		if (!extensions) args.push("--no-extensions");
 		args.push(
 			"--no-skills",
 			"--no-prompt-templates",
 			"--tools",
 			tools.join(","),
 		);
-
-		const out: RpcClientOptions = { cliPath: resolveCliPath(), args };
-		const cwd = options.cwd ?? process.cwd();
-		out.cwd = cwd;
-		const provider = options.provider ?? config.provider;
-		const model = options.model ?? config.model;
-		if (provider) out.provider = provider;
-		if (model) out.model = model;
-		return out;
+		args.push(...config.extraArgs);
+		return args;
 	}
 
 	async function pump(): Promise<void> {
@@ -294,34 +582,40 @@ export default function (pi: ExtensionAPI) {
 	async function executeRun(run: Run): Promise<void> {
 		run.status = "running";
 		liveRunIds.add(run.id);
-		const client = new RpcClient(buildClientOptions(run));
-		run.client = client;
+		const { command, commandArgs } = resolveChildCommand(config);
+		const agent = new ChildAgent(
+			command,
+			[...commandArgs, ...childArgs(run)],
+			asString(run.options.cwd) ?? process.cwd(),
+		);
+		run.agent = agent;
 
 		let unsubscribe: (() => void) | undefined;
+		let rejectDone: (error: Error) => void = () => undefined;
 		try {
-			await client.start();
+			await agent.start();
 			if (run.stopRequested) {
 				await stopRun(run, "stopped");
 				return;
 			}
 
-			// Wait on the *run* finishing, not on `agent_settled`: the child can
-			// settle while idle at startup, which would return an empty result. A
+			// Wait on the *run* finishing, not on `agent_settled`: a child can settle
+			// while idle at startup, which would return an empty result. A
 			// non-retrying `agent_end` is the end of this prompt's answer.
 			let resolveDone: () => void = () => undefined;
-			let rejectDone: (error: Error) => void = () => undefined;
 			const done = new Promise<void>((resolve, reject) => {
 				resolveDone = resolve;
 				rejectDone = reject;
 			});
 			// Stopping kills the child, so the run's own wait would never settle and
-			// its concurrency slot (and liveRunIds entry) would leak.
+			// its concurrency slot would leak.
 			run.settle = resolveDone;
-			unsubscribe = client.onEvent((event) => {
+
+			unsubscribe = agent.onEvent((event) => {
 				if (event.type === "message_end") {
-					const message = (
-						event as { message?: { role?: string; usage?: UsageLike } }
-					).message;
+					const message = event.message as
+						| { role?: string; usage?: UsageLike }
+						| undefined;
 					if (message?.role === "assistant") {
 						const text = messageText(message);
 						if (text.trim().length > 0) run.assistantText = text;
@@ -334,12 +628,11 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				if (event.type === "agent_end") {
-					if ((event as { willRetry?: boolean }).willRetry !== true)
-						resolveDone();
+					if (event.willRetry !== true) resolveDone();
 					return;
 				}
 				if (event.type === "error") {
-					const message = (event as { error?: { message?: string } }).error
+					const message = (event.error as { message?: string } | undefined)
 						?.message;
 					rejectDone(
 						new Error(message ? `agent error: ${message}` : "agent error"),
@@ -347,14 +640,12 @@ export default function (pi: ExtensionAPI) {
 				}
 			});
 
-			const disposition = await client.prompt(run.prompt);
-			if (disposition !== "handled") {
-				await withTimeout(
-					done,
-					run.options.timeoutMs ?? config.timeoutMs,
-					`agent ${run.type} timed out`,
-				);
-			}
+			await agent.request({ type: "prompt", message: run.prompt });
+			const timeoutMs =
+				typeof run.options.timeoutMs === "number"
+					? run.options.timeoutMs
+					: config.timeoutMs;
+			await withTimeout(done, timeoutMs, `agent ${run.type} timed out`);
 			if (run.stopRequested) {
 				await stopRun(run, "stopped");
 				return;
@@ -371,15 +662,14 @@ export default function (pi: ExtensionAPI) {
 			unsubscribe?.();
 			run.settle = undefined;
 			liveRunIds.delete(run.id);
-			run.client = undefined;
-			await client.stop().catch(() => undefined);
+			run.agent = undefined;
+			await agent.stop();
 		}
 	}
 
 	async function stopRun(run: Run, status: RunStatus): Promise<void> {
 		run.stopRequested = true;
-		const client = run.client;
-		if (client) await client.stop().catch(() => undefined);
+		await run.agent?.stop();
 		// Release the run's own wait so executeRun can finish and free its slot.
 		run.settle?.();
 		if (run.status === "queued" || run.status === "running")
@@ -400,10 +690,15 @@ export default function (pi: ExtensionAPI) {
 			return;
 		run.status = status;
 		const durationMs = Date.now() - run.startedAt;
+		const transcript = transcriptPathFor(run);
+		const withPointer = (text: string): string =>
+			transcript ? `${text}\n\n[full child transcript: ${transcript}]` : text;
 		if (status === "completed") {
 			pi.events.emit("subagents:completed", {
 				id: run.id,
-				result: result ?? "",
+				result: withPointer(result ?? ""),
+				durationMs,
+				toolCalls: run.toolCalls,
 			});
 		} else {
 			pi.events.emit("subagents:failed", {
@@ -414,7 +709,7 @@ export default function (pi: ExtensionAPI) {
 					(status === "stopped"
 						? `agent ${run.type} was stopped`
 						: `agent ${run.type} produced no output`),
-				result: result ?? "",
+				result: withPointer(result ?? ""),
 				durationMs,
 				toolCalls: run.toolCalls,
 				usage: run.usage,
@@ -436,11 +731,12 @@ export default function (pi: ExtensionAPI) {
 	pi.events.emit("subagents:ready", {});
 }
 
-interface UsageLike {
-	inputTokens?: number;
-	outputTokens?: number;
-	input?: number;
-	output?: number;
+type RunStatus = "queued" | "running" | "completed" | "failed" | "stopped";
+
+function accumulateUsage(run: Run, usage: UsageLike | undefined): void {
+	if (!usage) return;
+	run.usage.inputTokens += usage.inputTokens ?? usage.input ?? 0;
+	run.usage.outputTokens += usage.outputTokens ?? usage.output ?? 0;
 }
 
 async function withTimeout<T>(
@@ -459,12 +755,4 @@ async function withTimeout<T>(
 	} finally {
 		if (timer) clearTimeout(timer);
 	}
-}
-
-function accumulateUsage(run: Run, usage: UsageLike | undefined): void {
-	if (!usage) return;
-	const input = usage.inputTokens ?? usage.input ?? 0;
-	const output = usage.outputTokens ?? usage.output ?? 0;
-	run.usage.inputTokens += input;
-	run.usage.outputTokens += output;
 }
