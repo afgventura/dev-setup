@@ -1,5 +1,27 @@
 {
   "providers": {
+    "byteplus": {
+      "baseUrl": "https://ark.ap-southeast.bytepluses.com/api/v3",
+      "api": "openai-completions",
+      "authHeader": true,
+      "models": [
+        {
+          "id": "deepseek-v4-1-flash-260910",
+          "name": "DeepSeek V4.1 Flash (BytePlus Ark)",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 500000,
+          "maxTokens": 65536,
+          "compat": {
+            "supportsReasoningEffort": true,
+            "supportsStore": false
+          }
+        }
+      ]
+    },
     "opencode-go": {
       "modelOverrides": {
         "deepseek-v4.1-flash": {

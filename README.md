@@ -203,6 +203,13 @@ check at startup (~0.8 s); run `pi update` yourself now and then.
 it a bare model name like `gpt-5.6-luna` — which AGENTS.md tells subagents to
 use — resolved to opencode-go's copy and was billed there instead of to the
 ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
+`byteplus/deepseek-v4-1-flash-260910` (BytePlus Ark,
+`https://ark.ap-southeast.bytepluses.com/api/v3`) is the default provider and model, and
+`modelThinkingLevels` pins it to `medium`; Ark takes a reasoning-effort knob
+(`supportsReasoningEffort`), so `medium` is a real step there and pi does not clamp it
+away. Its key is deliberately not in `models.json`: pi resolves the `byteplus` credential
+from `auth.json` (`/login`) or the provider's environment variable, so a new machine needs
+that key supplied once before the default model will answer.
 `opencode-go-2` is opencode-go again under a second API key (Keychain item
 `haloai-shell:OPENCODE_GO_2_API_KEY`, read with `!security …` at request time),
 mirroring the models we use so two accounts can be billed separately. Note the
