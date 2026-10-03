@@ -248,8 +248,8 @@ the `fallbackSubagent` key in `subagents.json` supplies the default type when a 
 none. Verified: `general-purpose.md`'s model and thinking reach the child, and an agent whose
 body says to answer `TYPED-OK` did exactly that.
 
-`pi/settings.json` lists the packages pi installs on first run
-(`cc-my-pi`, `pi-mcp-adapter`, ralph loop, …).
+`pi/settings.json` lists the packages pi installs on first run (`cc-my-pi`,
+`pi-mcp-adapter`, `pi-context-view`, `rpiv-ask-user-question`).
 `pi-mcp-adapter` is pinned to `^5.0.0`: an unpinned entry resolves to npm's
 `latest` on every `pi update`, so pin it and bump it deliberately. 5.x is the
 line that reads pi's own `mcp.json` instead of warning that it "no longer reads"
@@ -378,14 +378,16 @@ haloai-shell:SELF_HOSTED_LLM_API_KEY -w "$(gcloud secrets versions access latest
 --secret=SELF_HOSTED_LLM_API_KEY --project=halo-ai-469606)"`. pi reads
 `models.json` only at startup (`/reload` doesn't touch the model catalogue), so
 a session started before the provider existed has to be relaunched to see it.
-`remote-pi` is the remote control (iOS app "Remote Pi"): `/remote-pi` in the
-session you want to drive → `/remote-pi relay url https://remote-pi-relay-….a.run.app`
-(our own, see `infra/remote-pi-relay/`) → scan the QR with the app. Peers are
-paired with Ed25519 keys kept in `~/.pi/remote/` and the phone Keychain.
-`pi/extensions/no-mesh.ts` blocks remote-pi's agent-network tools (`agent_send`,
-`agent_request`, `list_peers`): one session broadcasting a status note landed in
-every other session as a `[remote-pi:mesh-message]` that started a model turn
-there. We use remote-pi for the phone only.
+`remote-pi` (the iOS "Remote Pi" remote control, with our relay in
+`infra/remote-pi-relay/`) and `@lnilluv/pi-ralph-loop` were **removed** — not needed
+here. Re-add either by putting its `npm:` entry back in `pi/settings.json` and running
+`install.sh pi`; pi installs packages from that list, so it is the durable place to
+change them, and any session started after that picks it up. Two things stay behind
+while remote-pi is gone: `pi/extensions/no-mesh.ts` still blocks its agent-network
+tools (a no-op today — it re-arms the moment remote-pi is reinstalled), and
+`pi/extensions/tmux-window-name/` only calls `remote-pi rename` when that command
+exists, so it simply skips it. The relay infra itself is untouched and now unused;
+tearing it down is a separate decision.
 `pi/extensions/tab-status.ts` puts a state glyph in front of the pi tab name,
 like Claude Code's: `⋯ name` = a turn is running, `◔ name` = idle but something
 will wake it (a `/loop` or `schedule_wakeup` timer, a `background_run`/`watch`

@@ -1,11 +1,9 @@
 {
   "packages": [
-    "npm:@lnilluv/pi-ralph-loop",
     "npm:cc-my-pi",
     "npm:pi-mcp-adapter@^5.0.0",
     "npm:pi-context-view",
-    "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:remote-pi"
+    "npm:@juicesharp/rpiv-ask-user-question"
   ],
   "theme": "light",
   "defaultProvider": "byteplus",
