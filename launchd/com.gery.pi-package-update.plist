@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.gery.pi-package-update</string>
+  <!-- The script itself, not /bin/bash: macOS names a login item after the
+       executable it launches, so `ProgramArguments = [/bin/bash, script]` shows
+       up in System Settings > Login Items as "bash" (see the README note). -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>HOME_PLACEHOLDER/.config/pi/pi-package-update.sh</string>
+  </array>
+  <key>StartInterval</key><integer>43200</integer>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+  <key>Nice</key><integer>10</integer>
+</dict>
+</plist>

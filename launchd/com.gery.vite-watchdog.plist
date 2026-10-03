@@ -3,9 +3,11 @@
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.gery.vite-watchdog</string>
+  <!-- The script itself, not /bin/bash: macOS names the login item after the
+       executable it launches, and `[/bin/bash, script]` showed up there as
+       "bash" with no way to tell which job it was. -->
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
     <string>HOME_PLACEHOLDER/.config/tmux/vite-watchdog.sh</string>
   </array>
   <key>StartInterval</key><integer>5</integer>
