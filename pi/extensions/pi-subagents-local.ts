@@ -88,19 +88,34 @@ interface Config {
 	command?: string;
 	commandArgs?: string[];
 	extraArgs: string[];
+	/** Where agent type definitions live. Default: <agent dir>/agents. */
+	agentsDir?: string;
+	/** Default agent type when a caller names none. */
+	fallbackSubagent?: string;
+	/** Honour agent type definitions (model, thinking, tools, prompt). */
+	agentTypes: boolean;
+}
+
+function agentDir(): string {
+	const override = process.env.PI_CODING_AGENT_DIR;
+	return override && override.length > 0
+		? override
+		: join(homedir(), ".pi", "agent");
 }
 
 function configPath(): string {
 	const explicit = process.env.PI_SUBAGENTS_LOCAL_CONFIG;
 	if (explicit && explicit.length > 0) return explicit;
-	const agentDir = process.env.PI_CODING_AGENT_DIR;
-	const base =
-		agentDir && agentDir.length > 0
-			? agentDir
-			: join(homedir(), ".pi", "agent");
-	return join(base, "subagents-local.json");
+	return join(agentDir(), "subagents-local.json");
 }
 
+/**
+ * Settings live in two optional places, the second overriding the first:
+ *   - <agent dir>/subagents.json — shared with the old in-process engine, so the
+ *     keys that still mean something here (fallbackSubagent, maxConcurrent, model,
+ *     tools) keep working instead of silently doing nothing;
+ *   - <agent dir>/subagents-local.json, or PI_SUBAGENTS_LOCAL_CONFIG — this engine's.
+ */
 function loadConfig(): Config {
 	const config: Config = {
 		tools: DEFAULT_TOOLS,
@@ -109,16 +124,22 @@ function loadConfig(): Config {
 		extensions: false,
 		sessionDir: join(tmpdir(), "pi-subagents-local"),
 		extraArgs: [],
+		agentTypes: true,
 	};
-	let raw: Record<string, unknown>;
-	try {
-		raw = JSON.parse(readFileSync(configPath(), "utf-8")) as Record<
-			string,
-			unknown
-		>;
-	} catch {
-		return config; // No config file, or unreadable: defaults stand.
+	for (const path of [join(agentDir(), "subagents.json"), configPath()]) {
+		try {
+			applyConfig(
+				config,
+				JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>,
+			);
+		} catch {
+			// Missing or unreadable file: whatever is already set stands.
+		}
 	}
+	return config;
+}
+
+function applyConfig(config: Config, raw: Record<string, unknown>): void {
 	if (
 		Array.isArray(raw.tools) &&
 		raw.tools.every((t) => typeof t === "string") &&
@@ -128,6 +149,12 @@ function loadConfig(): Config {
 	}
 	if (typeof raw.model === "string") config.model = raw.model;
 	if (typeof raw.provider === "string") config.provider = raw.provider;
+	if (
+		typeof raw.fallbackSubagent === "string" &&
+		raw.fallbackSubagent.length > 0
+	) {
+		config.fallbackSubagent = raw.fallbackSubagent;
+	}
 	if (typeof raw.maxConcurrent === "number" && raw.maxConcurrent > 0)
 		config.maxConcurrent = Math.floor(raw.maxConcurrent);
 	if (typeof raw.timeoutMs === "number" && raw.timeoutMs > 0)
@@ -150,7 +177,9 @@ function loadConfig(): Config {
 	) {
 		config.extraArgs = raw.extraArgs as string[];
 	}
-	return config;
+	if (typeof raw.agentsDir === "string" && raw.agentsDir.length > 0)
+		config.agentsDir = raw.agentsDir;
+	if (typeof raw.agentTypes === "boolean") config.agentTypes = raw.agentTypes;
 }
 
 /**
@@ -405,6 +434,54 @@ function asString(value: unknown): string | undefined {
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+export interface AgentType {
+	name: string;
+	description?: string;
+	model?: string;
+	thinking?: string;
+	tools?: string[];
+	/** Body of the file, i.e. the agent's own system prompt, when it has one. */
+	prompt?: string;
+	promptMode: "append" | "replace";
+}
+
+function parseList(value: string): string[] {
+	return value
+		.replace(/^\[|\]$/g, "")
+		.split(",")
+		.map((entry) => entry.trim().replace(/^["'](.*)["']$/, "$1"))
+		.filter((entry) => entry.length > 0);
+}
+
+/**
+ * An agent type definition: YAML frontmatter plus optional body, the same shape
+ * the agent dir already uses. Only the keys that change how a child runs are
+ * read; anything else is ignored rather than rejected.
+ */
+export function parseAgentFile(text: string, name: string): AgentType {
+	const agent: AgentType = { name, promptMode: "append" };
+	let body = text;
+	const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+	if (frontmatter) {
+		body = text.slice(frontmatter[0].length);
+		for (const line of frontmatter[1].split(/\r?\n/)) {
+			const pair = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(line.trim());
+			if (!pair) continue;
+			const key = pair[1].toLowerCase();
+			const value = pair[2].trim().replace(/^["'](.*)["']$/, "$1");
+			if (key === "model") agent.model = value;
+			else if (key === "thinking") agent.thinking = value;
+			else if (key === "description") agent.description = value;
+			else if (key === "prompt_mode")
+				agent.promptMode = value === "replace" ? "replace" : "append";
+			else if (key === "tools") agent.tools = parseList(value);
+		}
+	}
+	const trimmed = body.trim();
+	if (trimmed.length > 0) agent.prompt = trimmed;
+	return agent;
+}
+
 export default function (pi: ExtensionAPI) {
 	const config = loadConfig();
 	const runs = new Map<string, Run>();
@@ -464,7 +541,7 @@ export default function (pi: ExtensionAPI) {
 		const id = randomUUID();
 		runs.set(id, {
 			id,
-			type: params.type ?? "general-purpose",
+			type: params.type ?? fallbackAgentType(),
 			prompt: params.prompt,
 			options: params.options ?? {},
 			startedAt: Date.now(),
@@ -527,18 +604,62 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	const agentTypeCache = new Map<string, AgentType | null>();
+
+	/** Where agent type definitions live. */
+	function agentsDirPath(): string {
+		return config.agentsDir ?? join(agentDir(), "agents");
+	}
+
+	/** An unknown type runs with the defaults rather than failing the spawn. */
+	function loadAgentType(type: string): AgentType | null {
+		if (!config.agentTypes) return null;
+		const cached = agentTypeCache.get(type);
+		if (cached !== undefined) return cached;
+		let agent: AgentType | null;
+		try {
+			agent = parseAgentFile(
+				readFileSync(join(agentsDirPath(), `${type}.md`), "utf-8"),
+				type,
+			);
+		} catch {
+			agent = null;
+		}
+		agentTypeCache.set(type, agent);
+		return agent;
+	}
+
+	/** The default type when a caller does not name one. */
+	function fallbackAgentType(): string {
+		return config.fallbackSubagent ?? "general-purpose";
+	}
+
 	function childArgs(run: Run): string[] {
 		const options = run.options;
+		// An agent type definition supplies the model, thinking level, tool list and
+		// system prompt; explicit per-run options win over it, and it wins over the
+		// extension-wide config.
+		const agent = loadAgentType(run.type);
 		const tools =
 			Array.isArray(options.tools) &&
 			options.tools.every((t) => typeof t === "string")
 				? (options.tools as string[])
-				: config.tools;
+				: (agent?.tools ?? config.tools);
 		const args = ["--mode", "rpc"];
 		const provider = asString(options.provider) ?? config.provider;
-		const model = asString(options.model) ?? config.model;
+		const model = asString(options.model) ?? agent?.model ?? config.model;
 		if (provider) args.push("--provider", provider);
 		if (model) args.push("--model", model);
+		const thinking = asString(options.thinking) ?? agent?.thinking;
+		if (thinking) args.push("--thinking", thinking);
+		if (agent?.prompt) {
+			args.push(
+				agent.promptMode === "append"
+					? "--append-system-prompt"
+					: "--system-prompt",
+				agent.prompt,
+			);
+		}
 
 		const sessionDir = sessionDirFor(run);
 		if (sessionDir) {

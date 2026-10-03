@@ -206,11 +206,23 @@ no orphan and frees its slot; a live session's `TaskExecute` ran a child end to 
 | `sessionDir` | `<tmp>/pi-subagents-local` | where child sessions are written, or `null` |
 | `command` / `commandArgs` | auto | override how a child is launched |
 | `extraArgs` | `[]` | appended last, for host pi version differences |
+| `agentsDir` | `<agent dir>/agents` | where `<type>.md` agent definitions are read |
+| `agentTypes` | true | false = ignore agent definitions, always use the defaults |
 
 Children keep their own session file under `<sessionDir>/<id>/`, which is what to read when an
 agent's returned summary is not enough. On another machine: clone this repo and run
 `install.sh pi`, or copy the single `pi-subagents-local.ts` plus `pi/subagents-local.json`
 into that host's agent dir — nothing else is required.
+
+**Agent types are honoured.** The engine reads `<agent dir>/agents/<type>.md` (frontmatter
+`model`, `thinking`, `tools`, `prompt_mode`, plus the file body as the agent's own system
+prompt) and passes them to the child — `--model`, `--thinking`, `--tools`, and
+`--append-system-prompt` (`prompt_mode: append`, the default) or `--system-prompt`
+(`prompt_mode: replace`). Explicit per-spawn options win over the agent file, which wins over
+`subagents-local.json`. An unknown type runs with defaults rather than failing the spawn, and
+the `fallbackSubagent` key in `subagents.json` supplies the default type when a caller names
+none. Verified: `general-purpose.md`'s model and thinking reach the child, and an agent whose
+body says to answer `TYPED-OK` did exactly that.
 
 `pi/settings.json` lists the packages pi installs on first run
 (`cc-my-pi`, `pi-mcp-adapter`, ralph loop, …).
