@@ -251,6 +251,18 @@ body says to answer `TYPED-OK` did exactly that.
 `pi/settings.json` lists the packages pi installs on first run (`cc-my-pi`,
 `pi-mcp-adapter`, `pi-context-view`, `rpiv-ask-user-question`).
 
+MCP servers are split by which loader owns them. `pi/mcp.json` is **pi's own**
+config, so it may only hold entries pi's schema understands (`command`/`args`, or
+`url` with `headers`/`oauth`); today that is just `browser`. Every HTTP, bearer and
+OAuth server (`halo_platform`, `cloudsql-*`, `axiom`, `slack-local`, `chrome-mcp`,
+`local-mcp`, `mobbin`, plus disabled `apify`) is defined in
+`<agent dir>/mcp-adapter.json`, which is the adapter's native config and where its
+`settings` live. Keeping the adapter-schema copies in `pi/mcp.json` is what made
+startup print `Skipped "halo_platform" (auth.provider must be a provider name) …`:
+pi rejected them, and the adapter reported them as skipped while it read pi's file.
+Definitions belong in exactly one of the two.
+
+
 The task widget above the editor is capped: cc-my-pi declares `maxVisible` (default 10)
 and `showAll`, and its settings menu saves both, but pi-tasks 1.4.1 renders every task —
 a 34-task list is 34 rows of screen. `pi/patches/cap-task-widget.mjs` makes the declared
