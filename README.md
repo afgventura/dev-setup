@@ -155,8 +155,36 @@ alone. Kills are logged to `~/.local/state/vite-watchdog.log`.
 
 ## pi
 
+Subagents run as **slim child pi processes**, not in-process SDK sessions
+(`pi/extensions/pi-subagents-local.ts`). `@tintinweb/pi-subagents` is no longer in the
+package list: its agents were sessions inside the parent, so every agent's bookkeeping,
+parsing, assembly and rendering shared the session's one event loop, and anything an agent
+leaked stayed in the parent for the life of the session (a 7h session was found holding
+1,768 leaked socketpairs, burning ~25% of a core with no I/O).
+
+The replacement speaks the same `subagents:rpc` v2 protocol that cc-my-pi's `pi-tasks`
+expects — `ping` returns `{version: 2}`, `spawn` returns an id and later emits
+`subagents:completed`/`:failed`, `stop` SIGTERMs the child — so cc-my-pi's task layer keeps
+working unchanged. Each agent is launched as:
+
+```
+node <same pi build as the parent> --mode rpc --session-dir /tmp/pi-subagents-local/<id> \
+  --no-extensions --no-skills --no-prompt-templates --tools read,grep,find,ls,bash,edit,write
+```
+
+`child.entry = process.argv[1]`, so children are always the same build as the parent —
+useful because it needs no host detection and works for the fork, an npm install, or a
+checkout. Children are ~35 MB RSS instead of ~361 MB inheriting 9 MCP servers, they use
+real cores for their own JS work, and their leaks die with the process. Verified: 4 agents
+each doing `sleep 3` finished in 6.7 s with 4 concurrent child processes (serial ≥ 12 s),
+and `stop` leaves no orphan. `pi/subagents-local.json` (copied to
+`~/.pi/agent/subagents-local.json`) sets the tool list, the fan-out cap (`maxConcurrent`),
+the per-agent timeout, and whether children get extensions. Children keep their own session
+file under `/tmp/pi-subagents-local/<id>/`, which is what to read when an agent's returned
+summary is not enough.
+
 `pi/settings.json` lists the packages pi installs on first run
-(`cc-my-pi`, `pi-mcp-adapter`, `pi-subagents` — required by cc-my-pi's `TaskExecute`, ralph loop, …).
+(`cc-my-pi`, `pi-mcp-adapter`, ralph loop, …).
 `pi-mcp-adapter` is pinned to `^5.0.0`: an unpinned entry resolves to npm's
 `latest` on every `pi update`, so pin it and bump it deliberately. 5.x is the
 line that reads pi's own `mcp.json` instead of warning that it "no longer reads"

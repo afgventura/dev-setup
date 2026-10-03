@@ -83,7 +83,7 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
   mkdir -p "$HOME/.pi/agent/extensions"
   # config files are copied (pi rewrites them); extensions are linked
-  for f in settings.json mcp.json mcp-adapter.json models.json; do
+  for f in settings.json mcp.json mcp-adapter.json models.json subagents-local.json; do
     if [ -f "$HOME/.pi/agent/$f" ]; then
       jq -s '.[0] * .[1]' "$HOME/.pi/agent/$f" "$REPO/pi/$f" > "$HOME/.pi/agent/$f.tmp" && mv "$HOME/.pi/agent/$f.tmp" "$HOME/.pi/agent/$f"
     else cp "$REPO/pi/$f" "$HOME/.pi/agent/$f"; fi
@@ -95,8 +95,11 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   link "$REPO/pi/extensions/no-mesh.ts" "$HOME/.pi/agent/extensions/no-mesh.ts"
   link "$REPO/pi/extensions/guard-search.ts" "$HOME/.pi/agent/extensions/guard-search.ts"
   link "$REPO/pi/extensions/tab-status.ts" "$HOME/.pi/agent/extensions/tab-status.ts"
+  link "$REPO/pi/extensions/pi-subagents-local.ts" "$HOME/.pi/agent/extensions/pi-subagents-local.ts"
   link "$REPO/pi/extensions/tmux-window-name" "$HOME/.pi/agent/extensions/tmux-window-name"
-  # one catch-all subagent type, model pinned; pi-subagents' built-ins are off
+  # one catch-all subagent type, model pinned; the old in-process engines are off.
+  # Subagents run as slim child pi processes via extensions/pi-subagents-local.ts,
+  # which speaks the same subagents:rpc v2 protocol that cc-my-pi's tasks expect.
   mkdir -p "$HOME/.pi/agent/agents"
   link "$REPO/pi/agents/general-purpose.md" "$HOME/.pi/agent/agents/general-purpose.md"
   S="$HOME/.pi/agent/subagents.json"

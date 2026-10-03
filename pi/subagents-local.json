@@ -1,0 +1,6 @@
+{
+  "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"],
+  "maxConcurrent": 8,
+  "timeoutMs": 1800000,
+  "extensions": false
+}
