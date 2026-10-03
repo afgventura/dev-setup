@@ -107,6 +107,18 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   node "$HOME/.pi/agent/patches/quiet-extension-warnings.mjs" ||
     echo "   quiet-extension-warnings: not applied (this pi is not a version the patch knows) — re-port it"
   echo "   pi packages install on first run from settings.json → packages"
+
+  say "pi package auto-update (launchd: at login and every 12 h)"
+  # Keeps the extension packages current so the "Package Updates Available" banner
+  # stops appearing. `pi update --extensions` only -- a plain `pi update` would
+  # self-update pi and drop the patch applied just above.
+  link "$REPO/pi/pi-package-update.sh" "$HOME/.config/pi/pi-package-update.sh"
+  mkdir -p "$HOME/Library/LaunchAgents"
+  P="$HOME/Library/LaunchAgents/com.gery.pi-package-update.plist"
+  sed "s|HOME_PLACEHOLDER|$HOME|" "$REPO/launchd/com.gery.pi-package-update.plist" > "$P"
+  launchctl bootout "gui/$(id -u)/com.gery.pi-package-update" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "$P"
+  echo "   log: ~/.local/state/pi-package-update.log (only when something changed or failed)"
 fi
 
 say "done"

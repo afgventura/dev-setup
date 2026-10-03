@@ -113,13 +113,21 @@ agent-notifier/           Swift source + build script for the notifier app
 claude/hooks.json         hook entries merged into ~/.claude/settings.json
 codex/config.snippet.toml notify hook + shared Chrome MCP over HTTP
 ssh/config.snippet        ControlMaster for github.com (fetch 3.2 s → 1.2 s)
-launchd/                  vite-watchdog: kills agent-started Vite dev servers every 5 s
+launchd/                  LaunchAgents: vite-watchdog (kills agent-started Vite dev
+                          servers every 5 s) and pi-package-update (extensions)
+pi/pi-package-update.sh   keeps pi's extension packages current so the update banner stops
 pi/                       pi coding agent: settings, models (context window), MCP servers, extensions
 infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 .agents/skills/           agent skills (.claude/skills/* are symlinks to them, for Claude Code)
 ```
 
 ## Tuning
+
+- launchd jobs run their script directly, never `/bin/bash <script>`: macOS names
+  a login item after the executable it launches, so the wrapper form showed up in
+  System Settings → General → Login Items ("Allow in the Background") as `bash`,
+  with no way to tell the two jobs apart. As a side effect the log's first column
+  is the script, not the interpreter.
 
 - Sidebar width: `@sidebar_width` in `tmux/ui.conf` (72) — the one place;
   `ghostty-ui.sh` (initial split), `sidebar-redraw.sh` (resize on attach/resize,
@@ -160,6 +168,20 @@ installed dist, because upstream pi 1.0.0 has no such setting and always renders
 startup diagnostics, so its extension-manifest warnings cannot be silenced any
 other way. `pi update` reinstalls the package and drops the patch — re-run the
 script (or `./install.sh pi`).
+
+`pi/pi-package-update.sh` (launchd `com.gery.pi-package-update`, at login and
+every 12 h) runs `pi update --extensions`, so the "Package Updates Available"
+banner stops appearing. Extensions only: a plain `pi update` would self-update
+pi and drop the patch above. It also clears pi's cached update check
+(`~/.pi/agent/package-update-check.json`) when that cache lists something — the
+banner reads the cache, and pi only refreshes it once a day, so without this it
+keeps naming packages that are already current; a clean cache is left alone
+because it is what saves the ~2.9 s check at startup. A version range in
+`pi/settings.json` still moves within its range (`@^5.0.0` takes the newest
+5.x); only a fully exact version is left alone by pi itself. Log:
+`~/.local/state/pi-package-update.log`, and only when something changed or
+failed. Run it by hand with `~/.config/pi/pi-package-update.sh`, or:
+`launchctl kickstart gui/$UID/com.gery.pi-package-update`.
 
 `pi/extensions/loop.ts` adds `/loop [interval] <prompt>` like Claude Code's:
 with an interval it fires on a fixed schedule; without one it is a self-paced
@@ -204,7 +226,8 @@ at $0.003/M cached input; long-context quality and latency are.
 own screen; the default inline mode re-prints the whole transcript through
 tmux on every resume, which is what made resuming a long session slow and
 flickery. `PI_SKIP_VERSION_CHECK=1` in the shell rc skips the network version
-check at startup (~0.8 s); run `pi update` yourself now and then.
+check at startup (~0.8 s); run `pi update` yourself now and then (extensions are
+kept current by the daemon below).
 `enabledModels` scopes the catalogue to exact `provider/model` entries
 (deepseek-v4.1-flash on opencode-go, the GPT models on openai-codex). Without
 it a bare model name like `gpt-5.6-luna` — which AGENTS.md tells subagents to
