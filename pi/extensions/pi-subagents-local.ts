@@ -61,6 +61,8 @@ import {
 	readFileSync,
 	readdirSync,
 	readSync,
+	rmSync,
+	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -313,6 +315,11 @@ class ChildAgent {
 		this.cwd = cwd;
 	}
 
+	/** The child's process id, for the run-state file. */
+	get pid(): number | undefined {
+		return this.child?.pid;
+	}
+
 	start(): Promise<void> {
 		const child = spawn(this.command, this.commandArgs, {
 			cwd: this.cwd,
@@ -480,6 +487,8 @@ interface Run {
 	stopRequested: boolean;
 	/** Last tool the agent called, for the live view. */
 	lastTool?: string;
+	/** Child process id, once started, so a reloading engine can find it again. */
+	pid?: number;
 	/** Unblocks the in-flight wait when the run is stopped from outside. */
 	settle?: () => void;
 }
@@ -551,6 +560,76 @@ export default function (pi: ExtensionAPI) {
 	let active = 0;
 	let shuttingDown = false;
 	let latestCtx: ExtensionContext | undefined;
+
+	/**
+	 * A reload re-imports this module — the loader runs with `moduleCache: false` —
+	 * so an in-flight child loses the pipes this instance holds, sees stdin EOF, and
+	 * exits. Nothing would tell the orchestrator, leaving its tasks stuck in flight.
+	 * So the running set is mirrored to disk, keyed by this session's process id, and
+	 * the next instance to load reports them as interrupted.
+	 */
+	function runStatePath(): string {
+		return join(tmpdir(), "pi-subagents-local", `runs-${process.pid}.json`);
+	}
+
+	function saveRunState(): void {
+		const live = [...runs.values()]
+			.filter((run) => run.status === "running" || run.status === "queued")
+			.map((run) => ({
+				id: run.id,
+				type: run.type,
+				pid: run.pid,
+				startedAt: run.startedAt,
+			}));
+		const path = runStatePath();
+		try {
+			if (live.length === 0) {
+				rmSync(path, { force: true });
+				return;
+			}
+			mkdirSync(join(tmpdir(), "pi-subagents-local"), { recursive: true });
+			writeFileSync(path, JSON.stringify({ pid: process.pid, runs: live }));
+		} catch {
+			// Best effort: losing this only means an interruption goes unreported.
+		}
+	}
+
+	/** Report the previous instance's in-flight runs as interrupted, and clean up. */
+	function recoverInterruptedRuns(): void {
+		const path = runStatePath();
+		let previous: Array<{ id?: string; type?: string; pid?: number }> = [];
+		try {
+			const parsed = JSON.parse(readFileSync(path, "utf-8")) as {
+				runs?: typeof previous;
+			};
+			previous = parsed.runs ?? [];
+		} catch {
+			return;
+		}
+		rmSync(path, { force: true });
+		for (const entry of previous) {
+			if (typeof entry.id !== "string") continue;
+			// Its pipes died with the previous instance, so it has already seen EOF;
+			// signal the group anyway in case the process is still winding down.
+			if (typeof entry.pid === "number" && process.platform !== "win32") {
+				try {
+					process.kill(-entry.pid, "SIGTERM");
+				} catch {
+					// Already gone.
+				}
+			}
+			pi.events.emit("subagents:failed", {
+				id: entry.id,
+				type: entry.type ?? "agent",
+				status: "interrupted",
+				error:
+					"agent was interrupted: the extension host reloaded while it was running, so it is not running now. Re-run it if its work is still needed.",
+				result: "",
+				durationMs: 0,
+				toolCalls: 0,
+			});
+		}
+	}
 	let notifyTimer: ReturnType<typeof setTimeout> | undefined;
 	const notifyQueue: Array<Record<string, unknown>> = [];
 
@@ -684,6 +763,7 @@ export default function (pi: ExtensionAPI) {
 			stopRequested: false,
 		});
 		queue.push(id);
+		saveRunState();
 		// Answered immediately: the caller gets an id and the outcome arrives later
 		// as subagents:completed / :failed.
 		replyOk("subagents:rpc:spawn", requestId, { id });
@@ -855,6 +935,8 @@ export default function (pi: ExtensionAPI) {
 		let rejectDone: (error: Error) => void = () => undefined;
 		try {
 			await agent.start();
+			run.pid = agent.pid;
+			saveRunState();
 			if (run.stopRequested) {
 				await stopRun(run, "stopped");
 				return;
@@ -1008,6 +1090,7 @@ export default function (pi: ExtensionAPI) {
 			if (typeof oldest === "string") finishedRuns.delete(oldest);
 		}
 		runs.delete(run.id);
+		saveRunState();
 	}
 
 	// A caller that learned to reach for `get_subagent_result` (it used to come
@@ -1073,6 +1156,10 @@ export default function (pi: ExtensionAPI) {
 		);
 		await Promise.all(running.map((run) => stopRun(run, "stopped")));
 	});
+
+	// A previous instance may have been reloaded out from under running children;
+	// report those before anything else, so their tasks do not sit in flight.
+	recoverInterruptedRuns();
 
 	// Tell the task layer an engine is present; it re-pings on this event.
 	pi.events.emit("subagents:ready", {});

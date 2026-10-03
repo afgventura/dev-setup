@@ -212,6 +212,17 @@ agents cost one turn rather than 16. `notify`: `always` (default) | `errors` onl
 
 Lifecycle: children are spawned in their own process group, so stopping an agent stops the
 work it started too (a build, a test run) — verified by PID. A clean parent exit stops every
+child; and if the parent is `SIGKILL`ed (no handler can run), the child sees its stdin
+close and exits on its own, taking its tool processes with it.
+
+**`/reload` kills in-flight agents, by design of the host.** The extension loader runs
+with `moduleCache: false` and `reload()` calls `clearExtensionCache()`, so a reload
+re-imports this module — the old instance drops the pipes its children were reading,
+they see stdin EOF, and exit. Nothing in-process can survive that, so instead of leaving
+tasks stuck "in flight", the engine mirrors its running set to a state file keyed by the
+session's process id, and the next instance to load reports each one as
+`subagents:failed` with `status: "interrupted"` (and signals the group, in case a child is
+still winding down). Reload between batches, not during one. A clean parent exit stops every
 child; and if the parent is `SIGKILL`ed (no handler can run), the child sees its stdin close
 and exits on its own, taking its tool processes with it.
 
