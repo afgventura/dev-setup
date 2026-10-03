@@ -250,6 +250,16 @@ body says to answer `TYPED-OK` did exactly that.
 
 `pi/settings.json` lists the packages pi installs on first run (`cc-my-pi`,
 `pi-mcp-adapter`, `pi-context-view`, `rpiv-ask-user-question`).
+
+The task widget above the editor is capped: cc-my-pi declares `maxVisible` (default 10)
+and `showAll`, and its settings menu saves both, but pi-tasks 1.4.1 renders every task —
+a 34-task list is 34 rows of screen. `pi/patches/cap-task-widget.mjs` makes the declared
+setting real, lists open tasks before completed ones so the actionable rows survive the
+cap, and adds a `… N more · /tasks` line. `pi/tasks-config.json` sets `maxVisible: 6`
+(copied to the agent dir by `install.sh`; `showAll: true` disables the cap). Re-run
+`install.sh pi` after `pi update --extensions`, which reinstalls the package and drops
+the patch — the patch is idempotent and reports rather than guesses if pi-tasks changes
+shape.
 `pi-mcp-adapter` is pinned to `^5.0.0`: an unpinned entry resolves to npm's
 `latest` on every `pi update`, so pin it and bump it deliberately. 5.x is the
 line that reads pi's own `mcp.json` instead of warning that it "no longer reads"

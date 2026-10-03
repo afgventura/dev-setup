@@ -86,7 +86,7 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
   mkdir -p "$PI_AGENT/extensions"
   # config files are copied (pi rewrites them); extensions are linked
-  for f in settings.json mcp.json mcp-adapter.json models.json subagents-local.json; do
+  for f in settings.json mcp.json mcp-adapter.json models.json subagents-local.json tasks-config.json; do
     if [ -f "$PI_AGENT/$f" ]; then
       jq -s '.[0] * .[1]' "$PI_AGENT/$f" "$REPO/pi/$f" > "$PI_AGENT/$f.tmp" && mv "$PI_AGENT/$f.tmp" "$PI_AGENT/$f"
     else cp "$REPO/pi/$f" "$PI_AGENT/$f"; fi
@@ -113,6 +113,10 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   link "$REPO/pi/patches/quiet-extension-warnings.mjs" "$PI_AGENT/patches/quiet-extension-warnings.mjs"
   node "$PI_AGENT/patches/quiet-extension-warnings.mjs" ||
     echo "   quiet-extension-warnings: not applied (this pi is not a version the patch knows) — re-port it"
+  # cc-my-pi declares maxVisible/showAll but its task widget renders every task, so a
+  # long list takes the screen; this makes the declared setting real. Re-run after
+  # `pi update --extensions`, which reinstalls the package.
+  node "$REPO/pi/patches/cap-task-widget.mjs"
   echo "   pi packages install on first run from settings.json → packages"
 
   say "pi package auto-update (launchd: at login and every 12 h)"
