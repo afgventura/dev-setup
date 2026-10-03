@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# dev-setup installer (macOS). Idempotent — safe to re-run after `git pull`.
+# dev-setup installer (macOS; the pi section also runs on Linux). Idempotent —
+# safe to re-run after `git pull`.
 #
 #   ./install.sh            # everything
 #   ./install.sh terminal   # ghostty + tmux + notifier only
@@ -119,12 +120,16 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   # stops appearing. `pi update --extensions` only -- a plain `pi update` would
   # self-update pi and drop the patch applied just above.
   link "$REPO/pi/pi-package-update.sh" "$HOME/.config/pi/pi-package-update.sh"
-  mkdir -p "$HOME/Library/LaunchAgents"
-  P="$HOME/Library/LaunchAgents/com.gery.pi-package-update.plist"
-  sed "s|HOME_PLACEHOLDER|$HOME|" "$REPO/launchd/com.gery.pi-package-update.plist" > "$P"
-  launchctl bootout "gui/$(id -u)/com.gery.pi-package-update" >/dev/null 2>&1 || true
-  launchctl bootstrap "gui/$(id -u)" "$P"
-  echo "   log: ~/.local/state/pi-package-update.log (only when something changed or failed)"
+  if [ "$(uname)" = "Darwin" ]; then
+    mkdir -p "$HOME/Library/LaunchAgents"
+    P="$HOME/Library/LaunchAgents/com.gery.pi-package-update.plist"
+    sed "s|HOME_PLACEHOLDER|$HOME|" "$REPO/launchd/com.gery.pi-package-update.plist" > "$P"
+    launchctl bootout "gui/$(id -u)/com.gery.pi-package-update" >/dev/null 2>&1 || true
+    launchctl bootstrap "gui/$(id -u)" "$P"
+    echo "   log: ~/.local/state/pi-package-update.log (only when something changed or failed)"
+  else
+    echo "   launchd is macOS-only; on Linux run ~/.config/pi/pi-package-update.sh from cron if wanted"
+  fi
 fi
 
 say "done"
