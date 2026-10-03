@@ -117,6 +117,7 @@ launchd/                  LaunchAgents: vite-watchdog (kills agent-started Vite 
                           servers every 5 s) and pi-package-update (extensions)
 pi/pi-package-update.sh   keeps pi's extension packages current so the update banner stops
 pi/                       pi coding agent: settings, models (context window), MCP servers, extensions
+pi/build-fork.sh          builds afgventura/pi and installs it as the global pi
 infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 .agents/skills/           agent skills (.claude/skills/* are symlinks to them, for Claude Code)
 ```
@@ -162,12 +163,37 @@ line that reads pi's own `mcp.json` instead of warning that it "no longer reads"
 it; 3.x warned on every start and pi 1.0.0 cannot silence that. 4.0.0+ also
 defaults `mcpScript` off, so `pi/mcp-adapter.json` (merged into
 `~/.pi/agent/mcp-adapter.json`) carries `settings.scriptMode: true` to keep it.
+`pi/build-fork.sh` builds `afgventura/pi` and installs it as the global `pi`. This is how the
+fork is meant to be installed; `install.sh pi` only installs upstream's npm build when no pi
+exists yet, and until `build-fork.sh` runs that npm build is what a bare `pi` starts, whatever
+the fork contains. Two things exist only in the fork:
+
+- `transcriptMaxLines` (default 20000): the transcript keeps just the tail of what it has
+  rendered. Upstream lays out the entire transcript on every frame, so a long session costs its
+  whole history per keystroke or streamed token — measured on a 48 MB session (5,986 items,
+  ~1.5M lines) 81 ms per warm frame and 17 s for the first render, against 2.6 ms and 8 ms with
+  the window. `/settings` → "Transcript line limit"; `0` keeps everything.
+- `set_cwd`, backgrounded long shell commands, an indexed session picker, and the
+  `quietExtensionWarnings` gate below.
+
+`PI_FORK_REF` (default `perf/transcript-window`), `PI_FORK_DIR` (default `~/Workspace/pi`),
+`PI_BIN` (default `/usr/local/bin/pi`) and `SKIP_LINK=1` override the defaults. It prefers a
+local branch over `origin`, so a dev machine never loses commits that are ahead of the remote,
+refuses to build over uncommitted work unless the Mac's staging dir
+`/tmp/pi-stage` (`npmrc`, `wip.patch`, `untracked.tgz`) is present, refuses to touch the
+`/opt/cmx/agents` multiplexer (that wrapper forwards to `/usr/local/bin/pi` anyway), and fails
+before installing if the freshly built bundle lacks the fork's markers — silently wrapping the
+upstream build is the failure mode this repo has already hit twice. Back to npm's build:
+`ln -sfn ../lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js /usr/local/bin/pi`.
+
 `pi/patches/quiet-extension-warnings.mjs` is linked to `~/.pi/agent/patches/` and
-run by `install.sh pi`: it ports the fork's `quietExtensionWarnings` gate into the
-installed dist, because upstream pi 1.0.0 has no such setting and always renders
+run by `install.sh pi`: it ports the fork's `quietExtensionWarnings` gate into an
+*npm-installed* pi, because upstream pi 1.0.0 has no such setting and always renders
 startup diagnostics, so its extension-manifest warnings cannot be silenced any
 other way. `pi update` reinstalls the package and drops the patch — re-run the
-script (or `./install.sh pi`).
+script (or `./install.sh pi`). Once `build-fork.sh` has run the patch is redundant
+but still safe: the fork implements the gate itself, and the patch skips its own edit
+when it finds it already present, so `install.sh pi` can be re-run either way.
 
 `pi/pi-package-update.sh` (launchd `com.gery.pi-package-update`, at login and
 every 12 h) runs `pi update --extensions`, so the "Package Updates Available"
