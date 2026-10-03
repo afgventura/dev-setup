@@ -13,7 +13,14 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 export LC_ALL=en_US.UTF-8   # printf pads by characters, not bytes
 unset TMUX
 exec 2>/dev/null   # never let a stray error reach tmux/fzf output
-W=${SIDEBAR_WIDTH:-51}
+# Row width = the sidebar pane's width. Read from ui.conf's @sidebar_width (the
+# single knob), because fzf draws each row across the whole pane: if the padding
+# is narrower, fzf stretches the highlight bar and the truncation no longer
+# matches the visible width -- which is how rows end up with a ragged right edge
+# after a width change. SIDEBAR_WIDTH still overrides, for tests.
+W=${SIDEBAR_WIDTH:-}
+if [ -z "$W" ]; then W=$(/opt/homebrew/bin/tmux -L ui show-options -gv @sidebar_width); fi
+case "$W" in '' | *[!0-9]*) W=72 ;; esac
 PAD=$((W - 7))          # fzf left margin 2 + "  " indent + marker + " " + name, one col spare
 DIM=$'\e[2m'; RST=$'\e[0m'
 

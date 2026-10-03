@@ -22,7 +22,7 @@ if [ "$what" = all ] || [ "$what" = terminal ]; then
 
   say "tmux"
   link "$REPO/tmux/tmux.conf" "$HOME/.tmux.conf"
-  for f in ui.conf ghostty-ui.sh sidebar.sh sidebar-list.sh sidebar-refresh.sh sidebar-click.sh sidebar-pos.sh sidebar-nav.sh sidebar-redraw.sh open-url.sh copy-release.sh agent-notify.sh vite-watchdog.sh selftest.sh clicktest.py; do
+  for f in ui.conf ghostty-ui.sh sidebar.sh sidebar-list.sh sidebar-refresh.sh sidebar-click.sh sidebar-pos.sh sidebar-nav.sh sidebar-redraw.sh sidebar-ids.sh open-url.sh copy-release.sh agent-notify.sh vite-watchdog.sh selftest.sh clicktest.py; do
     link "$REPO/tmux/$f" "$HOME/.config/tmux/$f"
   done
 
@@ -69,6 +69,12 @@ EOF
   say "reload (live sessions)"
   tmux source-file "$HOME/.tmux.conf" 2>/dev/null || true
   tmux -L ui source-file "$HOME/.config/tmux/ui.conf" 2>/dev/null || true
+  # A reload re-applies the bindings/hooks but not the layout, so leave the live
+  # chrome server consistent: sidebar-redraw.sh re-records @sidebar/@content and
+  # puts the sidebar back to @sidebar_width (it also repaints). Sourcing ui.conf
+  # used to be enough to strand the keyboard on the sidebar, because the file
+  # itself blanked the ids the click guards compared against.
+  "$HOME/.config/tmux/sidebar-redraw.sh" >/dev/null 2>&1 || true
   echo "   Ghostty: press ⌘⇧, (Reload Configuration) or relaunch."
 fi
 

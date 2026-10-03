@@ -63,8 +63,9 @@ Codex snippet, and copies the pi config. Re-run after `git pull`.
 ## How it works
 
 Two tmux servers. `main` (default socket) holds your real tabs. `ui`
-(`-L ui`, config `tmux/ui.conf`) is throwaway chrome: a 51-column pane running
-`sidebar.sh` (fzf as a pure display) next to a pane that just attaches `main`.
+(`-L ui`, config `tmux/ui.conf`) is throwaway chrome: a `@sidebar_width`-column
+pane (72 by default) running `sidebar.sh` (fzf as a pure display) next to a pane
+that just attaches `main`.
 It has no prefix, so every `C-b …` sequence Ghostty's ⌘ keybinds emit passes
 straight through to `main`. When the last Ghostty client detaches, `ui` kills
 itself; `main` lives on.
@@ -80,10 +81,13 @@ reload, and every
 hook is wrapped in `>/dev/null 2>&1 || true` — tmux would otherwise pop a
 failing hook's output over the active pane.
 Clicks are handled by tmux (`MouseDown1Pane` → `sidebar-click.sh`), never by
-fzf, so keyboard focus can't land in the sidebar. A window resize or focus-in
-(switching Spaces does both) runs `sidebar-redraw.sh` — full client redraw +
-fzf re-render — because fzf sometimes came back with a blank list after the
-resize/resize-back-to-51 pair.
+fzf, so keyboard focus can't land in the sidebar. The sidebar is identified by
+geometry — it is the pane at column 0 — in every mouse binding and focus hook;
+`@sidebar`/`@content` (recorded by `ghostty-ui.sh` / `sidebar-ids.sh`) are only
+for scripts and humans. A window resize, focus-in or (re)attach runs
+`sidebar-redraw.sh`: it re-records those ids, restores the sidebar to
+`@sidebar_width` and then does a full client redraw + fzf re-render, because fzf
+sometimes came back with a blank list after the resize/resize-back pair.
 
 `agent-notify.sh` is the Claude Code `Stop`/`Notification` hook and Codex's
 `notify` hook. It drops a JSON request into `~/.local/state/agent-notifier/queue`;
@@ -117,8 +121,11 @@ infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 
 ## Tuning
 
-- Sidebar width: `SIDEBAR_WIDTH` in `tmux/ghostty-ui.sh`, the `-x` in
-  `tmux/ui.conf`, and the default `W` in `sidebar-list.sh`.
+- Sidebar width: `@sidebar_width` in `tmux/ui.conf` (72) — the one place;
+  `ghostty-ui.sh` (initial split), `sidebar-redraw.sh` (resize on attach/resize,
+  clamped to leave ~40 columns) and `sidebar-list.sh` (row padding/truncation)
+  all read it. `SIDEBAR_WIDTH=<n>` in the environment overrides it for the list
+  (used by tests).
 - Active-row colour: `bg+:#0969da` in `sidebar.sh`.
 - MCP tokens for pi are read from env vars named in `pi/mcp.json`
   (`bearerTokenEnv`) — keep secrets in the Keychain and export them from your
