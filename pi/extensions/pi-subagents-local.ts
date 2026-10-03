@@ -58,8 +58,8 @@ import {
 	existsSync,
 	mkdirSync,
 	openSync,
-	readFileSync,
 	readdirSync,
+	readFileSync,
 	readSync,
 	rmSync,
 	writeFileSync,
@@ -67,11 +67,11 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { Type } from "typebox";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 const PROTOCOL_VERSION = 2;
 const DEFAULT_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"];
@@ -772,6 +772,9 @@ export default function (pi: ExtensionAPI) {
 			id,
 			type: params.type ?? fallbackAgentType(),
 			prompt: params.prompt,
+			// Passed through so a view can label the run with the caller's description
+			// (pi-tasks sends the task subject here) instead of a bare agent type.
+			options: params.options ?? {},
 			model: config.model,
 			startedAt: Date.now(),
 		});

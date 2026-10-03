@@ -20,11 +20,11 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Text } from "@earendil-works/pi-tui";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 
 const WIDGET_KEY = "subagents";
 const STATUS_KEY = "subagents";
@@ -81,6 +81,8 @@ function loadConfig(): Config {
 interface Tracked {
 	id: string;
 	type: string;
+	/** What this agent is for: the task subject when the caller gave one, else its prompt. */
+	label?: string;
 	status: "queued" | "running" | "completed" | "failed" | "stopped";
 	startedAt: number;
 	endedAt?: number;
@@ -101,6 +103,14 @@ export default function (pi: ExtensionAPI) {
 	const order: string[] = [];
 	let ctx: ExtensionContext | undefined;
 	let tick: ReturnType<typeof setInterval> | undefined;
+	let sessionName: string | undefined;
+
+	/** A one-line label, cut to the room the row has left for it. */
+	function labelFor(agent: Tracked, budget: number): string {
+		const text = (agent.label ?? agent.type).replace(/\s+/g, " ").trim();
+		if (text.length <= budget) return text;
+		return `${text.slice(0, Math.max(1, budget - 1))}\u2026`;
+	}
 
 	const isActive = (agent: Tracked) =>
 		agent.status === "queued" || agent.status === "running";
@@ -157,38 +167,69 @@ export default function (pi: ExtensionAPI) {
 		]
 			.filter(Boolean)
 			.join(", ");
-		const lines = [theme.fg("accent", `\u2726 ${summary}`)];
-
-		for (const agent of active.slice(-config.maxRows)) {
-			const id = agent.id.slice(0, 8);
-			const glyph = agent.status === "queued" ? "\u2026" : "\u25cf";
-			const parts = [
-				`${glyph} ${theme.fg("muted", id)}`,
-				theme.fg("dim", agent.type),
-				theme.fg("dim", `${elapsedSeconds(agent).toFixed(0)}s`),
-				agent.toolCalls > 0
-					? theme.fg(
-							"dim",
-							`${agent.toolCalls} tool${agent.toolCalls === 1 ? "" : "s"}`,
-						)
-					: undefined,
-				agent.tool ? theme.fg("dim", agent.tool) : undefined,
-			].filter(Boolean);
-			lines.push(`  ${parts.join("  ")}`);
-		}
-		if (active.length > config.maxRows) {
-			lines.push(
-				theme.fg("dim", `  \u2026 ${active.length - config.maxRows} more`),
-			);
-		}
-
-		ctx.ui.setWidget(WIDGET_KEY, lines, { placement: config.placement });
+		// Drawn as a component rather than plain strings for two reasons: each line can
+		// be cut to the terminal width, and this list gets its own rule with its own
+		// title so it cannot read as a continuation of the task list another extension
+		// draws directly above it. The label is the task's subject (or its prompt),
+		// because four rows all reading "general-purpose" say nothing about what is
+		// actually running.
+		ctx.ui.setWidget(
+			WIDGET_KEY,
+			(_tui, theme) => ({
+				invalidate: () => undefined,
+				render: (width: number): string[] => {
+					const name =
+						sessionName && sessionName.length > 40
+							? `${sessionName.slice(0, 39)}\u2026`
+							: sessionName;
+					const rule = Math.max(4, width - " agents ".length - 2);
+					const lines = [
+						`${theme.fg("dim", "\u2500\u2500")}${theme.fg("accent", " agents ")}${theme.fg("dim", "\u2500".repeat(rule))}`,
+						truncateToWidth(
+							`${theme.fg("accent", "\u2726")}${theme.fg("dim", ` ${summary}${name ? ` \u00b7 ${name}` : ""}`)}`,
+							width,
+						),
+					];
+					const shown = active.slice(-config.maxRows);
+					for (const agent of shown) {
+						const glyph = agent.status === "queued" ? "\u2026" : "\u25cf";
+						const before = `  ${glyph} ${agent.id.slice(0, 8)}  `;
+						const after = `  ${elapsedSeconds(agent).toFixed(0)}s  ${agent.toolCalls} tool${agent.toolCalls === 1 ? "" : "s"}${agent.tool ? `  ${agent.tool}` : ""}`;
+						const budget = Math.max(
+							8,
+							width - before.length - after.length - 1,
+						);
+						lines.push(
+							truncateToWidth(
+								`${theme.fg("muted", before)}${theme.fg("text", labelFor(agent, budget))}${theme.fg("dim", after)}`,
+								width,
+							),
+						);
+					}
+					if (active.length > shown.length) {
+						lines.push(
+							theme.fg("dim", `  \u2026 ${active.length - shown.length} more`),
+						);
+					}
+					return lines;
+				},
+			}),
+			{ placement: config.placement },
+		);
 		ctx.ui.setStatus(STATUS_KEY, theme.fg("accent", `\u2726 ${summary}`));
 		if (!tick) tick = setInterval(() => render(), TICK_MS);
 	}
 
 	pi.on("session_start", async (_event, context) => {
 		ctx = context;
+		render();
+	});
+
+	// The session's name, shown in the header so several sessions are tellable apart.
+	pi.on("session_info_changed", async (event) => {
+		const name = (event as { name?: string | undefined }).name;
+		sessionName =
+			typeof name === "string" && name.length > 0 ? name : undefined;
 		render();
 	});
 
@@ -205,11 +246,22 @@ export default function (pi: ExtensionAPI) {
 		const data = (raw ?? {}) as {
 			id?: string;
 			type?: string;
+			prompt?: string;
+			options?: Record<string, unknown>;
 			startedAt?: number;
 		};
 		if (typeof data.id !== "string") return;
+		// The task's subject is the most useful label; fall back to the prompt.
+		const description = data.options?.description;
+		const label =
+			typeof description === "string" && description.trim().length > 0
+				? description.trim()
+				: typeof data.prompt === "string"
+					? (data.prompt.trim().split("\n")[0] ?? undefined)
+					: undefined;
 		track(data.id, {
 			type: data.type ?? "agent",
+			label,
 			status: "running",
 			startedAt:
 				typeof data.startedAt === "number" ? data.startedAt : Date.now(),
@@ -312,7 +364,7 @@ export default function (pi: ExtensionAPI) {
 							: agent.status === "queued"
 								? "\u2026"
 								: "\u2717";
-				return `${icon} ${agent.id.slice(0, 8)}  ${agent.type}  ${agent.status}  ${elapsedSeconds(agent).toFixed(0)}s  ${agent.toolCalls} tools`;
+				return `${icon} ${agent.id.slice(0, 8)}  ${labelFor(agent, 44)}  ${agent.status}  ${elapsedSeconds(agent).toFixed(0)}s  ${agent.toolCalls} tools`;
 			});
 			context.ui.notify(
 				`${activeAgents().length} active of ${all.length} runs\n${lines.join("\n")}`,

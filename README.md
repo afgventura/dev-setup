@@ -198,7 +198,12 @@ no orphan and frees its slot; a live session's `TaskExecute` ran a child end to 
 
 **You can see them, and they tell you when they are done.** `pi/extensions/pi-subagents-ui.ts`
 draws what is running above the editor, a status line, `/agents`, and the completion
-notification box. It is event-driven: it repaints when an agent starts, reports tool
+notification box. The widget opens with its own ruled title (`── agents ──`)
+so it cannot read as a continuation of the task list drawn just above it by cc-my-pi, and
+each row is labelled with **the task's subject** (pi-tasks passes it as the spawn
+description; the agent's prompt is the fallback) plus elapsed time, tool count and last
+tool — four rows all reading "general-purpose" told you nothing. The session name appears
+in the header, capped so a generated sentence-length name cannot take the line. It is event-driven: it repaints when an agent starts, reports tool
 activity, or finishes, and the only timer is a 1s tick that exists *while* agents run (for
 the elapsed column) and is cleared the moment none are. The old engine repainted a full
 frame every 80ms regardless — 12.5 layout passes a second on the session's only thread.
