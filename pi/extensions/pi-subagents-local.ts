@@ -63,6 +63,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const PROTOCOL_VERSION = 2;
@@ -73,6 +74,8 @@ const DEFAULT_TIMEOUT_MS = 30 * 60_000;
 const REQUEST_TIMEOUT_MS = 60_000;
 /** Grace period between SIGTERM and SIGKILL when stopping a child. */
 const KILL_GRACE_MS = 5_000;
+/** How many finished runs stay answerable through `get_subagent_result`. */
+const FINISHED_RUN_HISTORY = 50;
 
 /** Live child ids, so a test can assert every child is torn down. */
 export const liveRunIds = new Set<string>();
@@ -430,6 +433,13 @@ interface Run {
 	settle?: () => void;
 }
 
+interface FinishedRun {
+	result: string;
+	transcript?: string;
+	status: RunStatus;
+	finishedAt: number;
+}
+
 function asString(value: unknown): string | undefined {
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -485,6 +495,7 @@ export function parseAgentFile(text: string, name: string): AgentType {
 export default function (pi: ExtensionAPI) {
 	const config = loadConfig();
 	const runs = new Map<string, Run>();
+	const finishedRuns = new Map<string, FinishedRun>();
 	const queue: string[] = [];
 	let active = 0;
 	let shuttingDown = false;
@@ -836,8 +847,73 @@ export default function (pi: ExtensionAPI) {
 				usage: run.usage,
 			});
 		}
+		finishedRuns.set(run.id, {
+			result: result ?? "",
+			transcript,
+			status,
+			finishedAt: Date.now(),
+		});
+		if (finishedRuns.size > FINISHED_RUN_HISTORY) {
+			const oldest = finishedRuns.keys().next().value;
+			if (typeof oldest === "string") finishedRuns.delete(oldest);
+		}
 		runs.delete(run.id);
 	}
+
+	// A caller that learned to reach for `get_subagent_result` (it used to come
+	// from the in-process engine) gets the real result instead of a dead end.
+	pi.registerTool({
+		name: "get_subagent_result",
+		label: "Get subagent result",
+		description:
+			"Read a subagent's full result by agent id — use it when a task's returned summary was truncated or you " +
+			"need what an agent actually produced. Also reports progress for an agent that is still running, and points " +
+			"at the agent's full transcript so you can read the detail yourself.",
+		promptSnippet:
+			"get_subagent_result: read a subagent's full result by agent id when its summary is truncated",
+		parameters: Type.Object({
+			agent_id: Type.String({
+				description:
+					"Agent id returned by the spawn/TaskExecute that started it",
+			}),
+		}),
+		async execute(_id, params) {
+			const running = runs.get(params.agent_id);
+			if (running) {
+				const partial = running.assistantText.trim();
+				return {
+					content: [
+						{
+							type: "text",
+							text: `agent ${params.agent_id} is still ${running.status}.${partial ? `\n\nOutput so far:\n${partial}` : " No output yet."}`,
+						},
+					],
+					details: { status: running.status },
+				};
+			}
+			const finished = finishedRuns.get(params.agent_id);
+			if (!finished) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: `No subagent run with id ${params.agent_id} in this session (only the last ${FINISHED_RUN_HISTORY} finished runs are kept).`,
+						},
+					],
+					details: { status: "unknown" },
+				};
+			}
+			const parts = [
+				finished.result.trim() || "(the agent produced no output)",
+			];
+			if (finished.transcript)
+				parts.push(`[full child transcript: ${finished.transcript}]`);
+			return {
+				content: [{ type: "text", text: parts.join("\n\n") }],
+				details: { status: finished.status, transcript: finished.transcript },
+			};
+		},
+	});
 
 	pi.on("session_shutdown", async () => {
 		shuttingDown = true;
