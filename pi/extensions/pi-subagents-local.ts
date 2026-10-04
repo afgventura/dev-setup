@@ -42,7 +42,8 @@
  *     "model": "provider/model-id",       // child model; default = host default
  *     "provider": "provider-name",
  *     "maxConcurrent": 16,                // fan-out cap; extras queue
- *     "timeoutMs": 1800000,               // per-agent wall-clock limit
+ *     "timeoutMs": 0,                     // optional per-agent wall-clock limit;
+ *                                          // 0/omitted = agents run until they finish
  *     "extensions": false,                // true = children load extensions/MCP too
  *     "sessionDir": "<tmpdir>/pi-subagents-local",  // or null for no --session-dir
  *     "command": "pi", "commandArgs": [], // override the child command entirely
@@ -76,7 +77,11 @@ import { Type } from "typebox";
 const PROTOCOL_VERSION = 2;
 const DEFAULT_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"];
 const DEFAULT_MAX_CONCURRENT = 16;
-const DEFAULT_TIMEOUT_MS = 30 * 60_000;
+/**
+ * There is deliberately no default wall-clock limit: an agent runs until it
+ * finishes, however long its task takes. A limit exists only when the caller
+ * asks for one (a spawn option) or the host config sets a positive value.
+ */
 /** How long a single control request (prompt, startup) may take to be acknowledged. */
 const REQUEST_TIMEOUT_MS = 60_000;
 /** Grace period between SIGTERM and SIGKILL when stopping a child. */
@@ -94,7 +99,8 @@ interface Config {
 	model?: string;
 	provider?: string;
 	maxConcurrent: number;
-	timeoutMs: number;
+	/** Optional per-agent wall-clock limit. Undefined = no limit. */
+	timeoutMs?: number;
 	extensions: boolean;
 	sessionDir: string | null;
 	command?: string;
@@ -139,7 +145,6 @@ function loadConfig(): Config {
 	const config: Config = {
 		tools: DEFAULT_TOOLS,
 		maxConcurrent: DEFAULT_MAX_CONCURRENT,
-		timeoutMs: DEFAULT_TIMEOUT_MS,
 		extensions: false,
 		sessionDir: join(tmpdir(), "pi-subagents-local"),
 		extraArgs: [],
@@ -178,8 +183,10 @@ function applyConfig(config: Config, raw: Record<string, unknown>): void {
 	}
 	if (typeof raw.maxConcurrent === "number" && raw.maxConcurrent > 0)
 		config.maxConcurrent = Math.floor(raw.maxConcurrent);
-	if (typeof raw.timeoutMs === "number" && raw.timeoutMs > 0)
-		config.timeoutMs = raw.timeoutMs;
+	// A positive value is a wall-clock limit; 0 or a negative value means
+	// explicitly unlimited (so a shared config can clear an inherited limit).
+	if (typeof raw.timeoutMs === "number")
+		config.timeoutMs = raw.timeoutMs > 0 ? raw.timeoutMs : undefined;
 	if (typeof raw.extensions === "boolean") config.extensions = raw.extensions;
 	if (raw.sessionDir === null) config.sessionDir = null;
 	else if (typeof raw.sessionDir === "string" && raw.sessionDir.length > 0)
@@ -336,8 +343,11 @@ class ChildAgent {
 	private readonly eventListeners: Array<
 		(event: Record<string, unknown>) => void
 	> = [];
+	private readonly exitListeners: Array<(error: Error) => void> = [];
 	private stderrTail = "";
 	private exited: { code: number | null; signal: string | null } | undefined;
+	private exitError: Error | undefined;
+	private exitNotified = false;
 	private stopping = false;
 
 	private readonly command: string;
@@ -387,21 +397,34 @@ class ChildAgent {
 				this.stderrTail.trim().length > 0
 					? `: ${this.stderrTail.trim().split("\n").slice(-3).join(" | ")}`
 					: "";
-			this.rejectPending(
-				new Error(
-					`child pi exited (code=${String(code)}, signal=${String(signal)})${detail}`,
-				),
+			const error = new Error(
+				`child pi exited (code=${String(code)}, signal=${String(signal)})${detail}`,
 			);
+			this.rejectPending(error);
+			this.notifyExit(error);
 		});
 		child.once("error", (error) => {
-			this.rejectPending(
-				error instanceof Error ? error : new Error(String(error)),
-			);
+			// A spawn failure (ENOENT, EACCES) may never emit `exit`, so treat it as
+			// terminal too — otherwise an unbounded run would wait forever.
+			const failure =
+				error instanceof Error ? error : new Error(String(error));
+			if (!this.exited) this.exited = { code: null, signal: null };
+			this.rejectPending(failure);
+			this.notifyExit(failure);
 		});
 
-		return new Promise<void>((resolve) => {
-			if (child.pid) resolve();
-			else child.once("spawn", () => resolve());
+		// Resolves once the child is up; rejects if it never starts (a bad command
+		// emits `error` and no `spawn`), so the caller is never left waiting on a
+		// process that does not exist.
+		return new Promise<void>((resolve, reject) => {
+			if (child.pid) {
+				resolve();
+				return;
+			}
+			child.once("spawn", () => resolve());
+			child.once("error", (error) =>
+				reject(error instanceof Error ? error : new Error(String(error))),
+			);
 		});
 	}
 
@@ -471,6 +494,31 @@ class ChildAgent {
 			const index = this.eventListeners.indexOf(listener);
 			if (index >= 0) this.eventListeners.splice(index, 1);
 		};
+	}
+
+	/**
+	 * Called once when the child dies — a crash, a kill, or a failure to start.
+	 * None of those produce an `agent_end`, so without this an unbounded run would
+	 * wait for an event that will never come. A listener added after the fact is
+	 * called immediately with the recorded error.
+	 */
+	onExit(listener: (error: Error) => void): () => void {
+		if (this.exitNotified && this.exitError) {
+			listener(this.exitError);
+			return () => undefined;
+		}
+		this.exitListeners.push(listener);
+		return () => {
+			const index = this.exitListeners.indexOf(listener);
+			if (index >= 0) this.exitListeners.splice(index, 1);
+		};
+	}
+
+	private notifyExit(error: Error): void {
+		if (this.exitNotified) return;
+		this.exitNotified = true;
+		this.exitError = error;
+		for (const listener of [...this.exitListeners]) listener(error);
 	}
 
 	/** SIGTERM, then SIGKILL if the child does not go away. Resolves when it is gone. */
@@ -972,6 +1020,7 @@ export default function (pi: ExtensionAPI) {
 		run.agent = agent;
 
 		let unsubscribe: (() => void) | undefined;
+		let unsubscribeExit: (() => void) | undefined;
 		let rejectDone: (error: Error) => void = () => undefined;
 		try {
 			await agent.start();
@@ -993,6 +1042,9 @@ export default function (pi: ExtensionAPI) {
 			// Stopping kills the child, so the run's own wait would never settle and
 			// its concurrency slot would leak.
 			run.settle = resolveDone;
+			// A crash, a kill or a failed start produces no `agent_end`; fail the run
+			// instead of waiting on an event that will never arrive.
+			unsubscribeExit = agent.onExit((error) => rejectDone(error));
 
 			unsubscribe = agent.onEvent((event) => {
 				if (event.type === "message_end") {
@@ -1033,11 +1085,17 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			await agent.request({ type: "prompt", message: run.prompt });
+			// No wall-clock limit by default: the agent runs until it finishes. A
+			// positive per-run option (the orchestrator asking for one) wins over the
+			// host config; 0 or a negative value there means "no limit" too.
 			const timeoutMs =
 				typeof run.options.timeoutMs === "number"
-					? run.options.timeoutMs
+					? run.options.timeoutMs > 0
+						? run.options.timeoutMs
+						: undefined
 					: config.timeoutMs;
-			await withTimeout(done, timeoutMs, `agent ${run.type} timed out`);
+			if (timeoutMs === undefined) await done;
+			else await withTimeout(done, timeoutMs, `agent ${run.type} timed out`);
 			if (run.stopRequested) {
 				await stopRun(run, "stopped");
 				return;
@@ -1052,6 +1110,7 @@ export default function (pi: ExtensionAPI) {
 			finish(run, "failed", run.assistantText || undefined, message);
 		} finally {
 			unsubscribe?.();
+			unsubscribeExit?.();
 			run.settle = undefined;
 			liveRunIds.delete(run.id);
 			run.agent = undefined;

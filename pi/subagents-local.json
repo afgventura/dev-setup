@@ -9,7 +9,7 @@
     "write"
   ],
   "maxConcurrent": 16,
-  "timeoutMs": 1800000,
+  "timeoutMs": 0,
   "extensions": false,
   "ui": true,
   "notify": "always"

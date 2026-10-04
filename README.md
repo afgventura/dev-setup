@@ -196,6 +196,14 @@ against a cap of 16 held **exactly 16 concurrent children** (largest 140 MB) and
 no orphan and frees its slot; a live session's `TaskExecute` ran a child end to end.
 `pi/subagents-local.json` (merged into the agent dir by `install.sh`) sets:
 
+**No wall-clock limit by default.** An agent runs until its task is done, however long it
+takes — the engine imposes nothing. A limit exists only when one is asked for: a positive
+`timeoutMs` in `pi/subagents-local.json`, or a positive `timeoutMs` in a spawn's `options`
+(the orchestrator specifying one for that run). `0`, a negative value, or an omitted key
+all mean unlimited. Losing the timer did not lose the safety net it used to provide: the
+child's exit is watched directly, so a crash, an OOM kill, or an external `kill` still
+fails the run promptly instead of leaving it waiting on an `agent_end` that will never come.
+
 **You can see them, and they tell you when they are done.** `pi/extensions/pi-subagents-ui.ts`
 draws what is running above the editor, a status line, `/agents`, and the completion
 notification box. The widget opens with its own ruled title (`── agents ──`)
@@ -235,7 +243,7 @@ and exits on its own, taking its tool processes with it.
 | --- | --- | --- |
 | `tools` | read, grep, find, ls, bash, edit, write | tools each child gets |
 | `maxConcurrent` | 16 | fan-out cap; extras queue |
-| `timeoutMs` | 1800000 | per-agent wall-clock limit |
+| `timeoutMs` | none | optional per-agent wall-clock limit; unset or `0` = run until done |
 | `model` / `provider` | unset | child model; unset = host default |
 | `extensions` | false | true = children also load extensions/MCP |
 | `sessionDir` | `<tmp>/pi-subagents-local` | where child sessions are written, or `null` |
