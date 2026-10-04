@@ -1039,6 +1039,11 @@ export default function (pi: ExtensionAPI) {
 				resolveDone = resolve;
 				rejectDone = reject;
 			});
+			// The prompt request below can fail on its own (the child dies before
+			// acknowledging it), rejecting `done` before anything awaits it. Mark it
+			// handled so that is not an unhandled rejection; awaiting it later still
+			// throws into this function's catch.
+			done.catch(() => undefined);
 			// Stopping kills the child, so the run's own wait would never settle and
 			// its concurrency slot would leak.
 			run.settle = resolveDone;
