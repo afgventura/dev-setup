@@ -89,6 +89,23 @@ function apply(file, edits) {
 }
 
 const chunksDir = join(root, "dist/bundle/chunks");
+
+// The fork (build-fork.sh) implements the gate itself, as `?? false` / `??!1` instead of the
+// `=== true` this patch writes. Leave it alone there: the getter is already present and
+// resource-loader has a different shape, so the edits below would insert a second getter and
+// then throw. Report and stop instead.
+const FORK_GATE_MARKERS = ["quietExtensionWarnings??!1", "quietExtensionWarnings ?? false"];
+const ownsGate = readdirSync(chunksDir)
+  .filter((name) => name.endsWith(".js"))
+  .map((name) => join(chunksDir, name))
+  .concat(join(root, "dist/core/settings-manager.js"))
+  .find((file) => FORK_GATE_MARKERS.some((marker) => readFileSync(file, "utf8").includes(marker)));
+if (ownsGate) {
+  console.log(`= already patched  ${ownsGate.replace(`${root}/`, "")} (this pi implements the gate itself)`);
+  console.log(`\npi at ${root}`);
+  process.exit(0);
+}
+
 const bundleFile = readdirSync(chunksDir)
   .filter((name) => name.endsWith(".js"))
   .map((name) => join(chunksDir, name))
