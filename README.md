@@ -310,6 +310,21 @@ cap, and adds a `… N more · /tasks` line. `pi/tasks-config.json` sets `maxVis
 `install.sh pi` after `pi update --extensions`, which reinstalls the package and drops
 the patch — the patch is idempotent and reports rather than guesses if pi-tasks changes
 shape.
+
+`ctx.ui.setStatus` is how an extension puts state in the footer, and pi's own footer prints
+every key. cc-my-pi replaces that footer with its statusline, which renders exactly five
+(`hindsight`, `codex-usage`, `caveman`, `bg-terminals`, `mcp`) and drops the rest — so the
+armed state this repo publishes was in no UI at all: an agent waiting on a watch or a
+background run looked idle, the tmux-tab `◔` does not exist outside tmux, and in cmx
+nothing showed. `pi/patches/statusline-armed-statuses.mjs` renders every status that
+statusline does not claim, ahead of the five it does, so a row cut off at the terminal edge
+still shows what the session is waiting on. The claimed keys are read out of the statusline
+rather than hard-coded, so a release that adds a segment does not render it twice. Same
+terms: re-run `install.sh pi` after `pi update --extensions`. A **new** session shows it —
+a session that is already running keeps the statusline module it loaded, and `/reload` does
+not re-read a changed extension file (checked with a probe whose file said `marker-TWO` on
+disk at the reload: the row still said `marker-ONE`), so a session that armed a watch
+before the patch needs a restart to display it.
 `pi-mcp-adapter` is pinned to `^5.0.0`: an unpinned entry resolves to npm's
 `latest` on every `pi update`, so pin it and bump it deliberately. 5.x is the
 line that reads pi's own `mcp.json` instead of warning that it "no longer reads"

@@ -117,6 +117,11 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   # long list takes the screen; this makes the declared setting real. Re-run after
   # `pi update --extensions`, which reinstalls the package.
   node "$REPO/pi/patches/cap-task-widget.mjs"
+  # cc-my-pi's statusline renders a fixed five extension statuses and silently drops every
+  # other one, so the state this repo's own extensions publish (a watch or background run,
+  # the loop, the goal, the subagent count) never reached the footer. Re-run after
+  # `pi update --extensions`, which reinstalls the package.
+  node "$REPO/pi/patches/statusline-armed-statuses.mjs"
   echo "   pi packages install on first run from settings.json → packages"
 
   say "pi package auto-update (launchd: at login and every 12 h)"
