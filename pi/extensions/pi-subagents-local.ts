@@ -38,13 +38,17 @@
  * Config (all optional), at PI_SUBAGENTS_LOCAL_CONFIG, else
  * $PI_CODING_AGENT_DIR/subagents-local.json, else ~/.pi/agent/subagents-local.json:
  *   {
- *     "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"],
+ *     "tools": ["read", "bash"],          // optional allowlist; default = no --tools
+ *                                         //   (built-in, extension and MCP tools all surface)
  *     "model": "provider/model-id",       // child model; default = host default
  *     "provider": "provider-name",
  *     "maxConcurrent": 16,                // fan-out cap; extras queue
  *     "timeoutMs": 0,                     // optional per-agent wall-clock limit;
  *                                          // 0/omitted = agents run until they finish
- *     "extensions": false,                // true = children load extensions/MCP too
+ *     "extensions": true,                 // false = --no-extensions (no MCP in children)
+ *     "skills": true,                     // false = --no-skills
+ *     "promptTemplates": true,            // false = --no-prompt-templates
+ *     "maxDepth": 2,                      // main (0) -> child (1) -> grandchild (2)
  *     "sessionDir": "<tmpdir>/pi-subagents-local",  // or null for no --session-dir
  *     "command": "pi", "commandArgs": [], // override the child command entirely
  *     "extraArgs": []                     // appended last, for version differences
@@ -75,7 +79,17 @@ import type {
 import { Type } from "typebox";
 
 const PROTOCOL_VERSION = 2;
-const DEFAULT_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"];
+/**
+ * Children are full pi sessions: they load extensions (MCP), skills and prompt
+ * templates, and get no tool allowlist unless an agent type or the config sets
+ * one. A child therefore loads this engine too, so nesting is capped by depth.
+ */
+const DEFAULT_MAX_DEPTH = 2;
+/** Set on every child's environment; the parent session is depth 0. */
+const DEPTH_ENV = "PI_SUBAGENTS_LOCAL_DEPTH";
+const CURRENT_DEPTH = Number.parseInt(process.env[DEPTH_ENV] ?? "0", 10) || 0;
+/** Dialog requests a headless child cannot get answered; they are cancelled at once. */
+const DIALOG_METHODS = new Set(["select", "confirm", "input", "editor"]);
 const DEFAULT_MAX_CONCURRENT = 16;
 /**
  * There is deliberately no default wall-clock limit: an agent runs until it
@@ -95,13 +109,17 @@ const DEFAULT_NOTIFY_BATCH_MS = 1_500;
 export const liveRunIds = new Set<string>();
 
 interface Config {
-	tools: string[];
+	/** Tool allowlist passed as --tools. Undefined = no allowlist. */
+	tools?: string[];
 	model?: string;
 	provider?: string;
 	maxConcurrent: number;
 	/** Optional per-agent wall-clock limit. Undefined = no limit. */
 	timeoutMs?: number;
 	extensions: boolean;
+	skills: boolean;
+	promptTemplates: boolean;
+	maxDepth: number;
 	sessionDir: string | null;
 	command?: string;
 	commandArgs?: string[];
@@ -143,9 +161,11 @@ function configPath(): string {
  */
 function loadConfig(): Config {
 	const config: Config = {
-		tools: DEFAULT_TOOLS,
 		maxConcurrent: DEFAULT_MAX_CONCURRENT,
-		extensions: false,
+		extensions: true,
+		skills: true,
+		promptTemplates: true,
+		maxDepth: DEFAULT_MAX_DEPTH,
 		sessionDir: join(tmpdir(), "pi-subagents-local"),
 		extraArgs: [],
 		agentTypes: true,
@@ -188,6 +208,11 @@ function applyConfig(config: Config, raw: Record<string, unknown>): void {
 	if (typeof raw.timeoutMs === "number")
 		config.timeoutMs = raw.timeoutMs > 0 ? raw.timeoutMs : undefined;
 	if (typeof raw.extensions === "boolean") config.extensions = raw.extensions;
+	if (typeof raw.skills === "boolean") config.skills = raw.skills;
+	if (typeof raw.promptTemplates === "boolean")
+		config.promptTemplates = raw.promptTemplates;
+	if (typeof raw.maxDepth === "number" && raw.maxDepth >= 0)
+		config.maxDepth = Math.floor(raw.maxDepth);
 	if (raw.sessionDir === null) config.sessionDir = null;
 	else if (typeof raw.sessionDir === "string" && raw.sessionDir.length > 0)
 		config.sessionDir = raw.sessionDir;
@@ -370,7 +395,7 @@ class ChildAgent {
 	start(): Promise<void> {
 		const child = spawn(this.command, this.commandArgs, {
 			cwd: this.cwd,
-			env: process.env,
+			env: { ...process.env, [DEPTH_ENV]: String(CURRENT_DEPTH + 1) },
 			stdio: ["pipe", "pipe", "pipe"],
 			// Its own process group, so stopping the agent can stop the work it
 			// started too (a build, a test run, a long bash). Killing only the
@@ -434,6 +459,18 @@ class ChildAgent {
 			data = JSON.parse(line) as Record<string, unknown>;
 		} catch {
 			return; // Not JSONL we understand; ignore rather than crash the run.
+		}
+		if (
+			data.type === "extension_ui_request" &&
+			typeof data.id === "string" &&
+			DIALOG_METHODS.has(String(data.method))
+		) {
+			// Nobody can answer a headless child's dialog; without a reply it waits
+			// until the run times out. Cancel it so the child carries on.
+			this.child?.stdin?.write(
+				`${JSON.stringify({ type: "extension_ui_response", id: data.id, cancelled: true })}\n`,
+			);
+			return;
 		}
 		if (data.type === "response" && typeof data.id === "string") {
 			const pending = this.pending.get(data.id);
@@ -834,6 +871,14 @@ export default function (pi: ExtensionAPI) {
 			replyError("subagents:rpc:spawn", requestId, "session is shutting down");
 			return;
 		}
+		if (CURRENT_DEPTH >= config.maxDepth) {
+			replyError(
+				"subagents:rpc:spawn",
+				requestId,
+				`subagent depth cap reached: this session is at depth ${CURRENT_DEPTH} of max ${config.maxDepth}. Do the work yourself.`,
+			);
+			return;
+		}
 		const id = randomUUID();
 		runs.set(id, {
 			id,
@@ -985,12 +1030,11 @@ export default function (pi: ExtensionAPI) {
 				? options.extensions
 				: config.extensions;
 		if (!extensions) args.push("--no-extensions");
-		args.push(
-			"--no-skills",
-			"--no-prompt-templates",
-			"--tools",
-			tools.join(","),
-		);
+		if (!config.skills) args.push("--no-skills");
+		if (!config.promptTemplates) args.push("--no-prompt-templates");
+		// --tools is an allowlist over built-in, extension and MCP tools alike, so
+		// it is passed only when something asked for one.
+		if (tools && tools.length > 0) args.push("--tools", tools.join(","));
 		args.push(...config.extraArgs);
 		return args;
 	}

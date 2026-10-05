@@ -1,16 +1,10 @@
 {
-  "tools": [
-    "read",
-    "grep",
-    "find",
-    "ls",
-    "bash",
-    "edit",
-    "write"
-  ],
-  "maxConcurrent": 16,
+  "maxConcurrent": 32,
   "timeoutMs": 0,
-  "extensions": false,
+  "extensions": true,
+  "skills": true,
+  "promptTemplates": true,
+  "maxDepth": 2,
   "ui": true,
   "notify": "always"
 }

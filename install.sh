@@ -91,6 +91,10 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
       jq -s '.[0] * .[1]' "$PI_AGENT/$f" "$REPO/pi/$f" > "$PI_AGENT/$f.tmp" && mv "$PI_AGENT/$f.tmp" "$PI_AGENT/$f"
     else cp "$REPO/pi/$f" "$PI_AGENT/$f"; fi
   done
+  # Subagent children are full sessions now; drop the old slim-child tool allowlist,
+  # which hid every extension and MCP tool (the merge above cannot remove a key).
+  jq 'del(.tools)' "$PI_AGENT/subagents-local.json" > "$PI_AGENT/subagents-local.json.tmp" \
+    && mv "$PI_AGENT/subagents-local.json.tmp" "$PI_AGENT/subagents-local.json"
   link "$REPO/pi/extensions/loop.ts" "$PI_AGENT/extensions/loop.ts"
   link "$REPO/pi/extensions/tasks.ts" "$PI_AGENT/extensions/tasks.ts"
   link "$REPO/pi/extensions/goal.ts" "$PI_AGENT/extensions/goal.ts"
@@ -102,7 +106,8 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   link "$REPO/pi/extensions/pi-subagents-ui.ts" "$PI_AGENT/extensions/pi-subagents-ui.ts"
   link "$REPO/pi/extensions/tmux-window-name" "$PI_AGENT/extensions/tmux-window-name"
   # one catch-all subagent type, model pinned; the old in-process engines are off.
-  # Subagents run as slim child pi processes via extensions/pi-subagents-local.ts,
+  # Subagents run as child pi processes (with extensions, MCP and skills) via
+  # extensions/pi-subagents-local.ts,
   # which speaks the same subagents:rpc v2 protocol that cc-my-pi's tasks expect.
   mkdir -p "$PI_AGENT/agents"
   link "$REPO/pi/agents/general-purpose.md" "$PI_AGENT/agents/general-purpose.md"

@@ -22,6 +22,8 @@ const waits = ((globalThis as any).__piWaits ??= { m: new Map<string, string>(),
 
 export default function (pi: ExtensionAPI) {
 	if (!process.env.TMUX) return;
+	// A pi-subagents-local child shares the parent's tmux pane; only the parent owns the tab.
+	if (process.env.PI_SUBAGENTS_LOCAL_DEPTH) return;
 
 	let working = false;
 	let hasUI = false;

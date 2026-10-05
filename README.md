@@ -155,7 +155,7 @@ alone. Kills are logged to `~/.local/state/vite-watchdog.log`.
 
 ## pi
 
-Subagents run as **slim child pi processes**, not in-process SDK sessions
+Subagents run as **child pi processes**, not in-process SDK sessions
 (`pi/extensions/pi-subagents-local.ts`). `@tintinweb/pi-subagents` is no longer in the
 package list: its agents were sessions inside the parent, so every agent's bookkeeping,
 parsing, assembly and rendering shared the session's one event loop, and anything an agent
@@ -168,9 +168,30 @@ expects — `ping` returns `{version: 2}`, `spawn` returns an id and later emits
 working unchanged. Each agent is launched as:
 
 ```
-<command> <commandArgs> --mode rpc --session-dir <tmp>/pi-subagents-local/<id> \
-  --no-extensions --no-skills --no-prompt-templates --tools read,grep,find,ls,bash,edit,write
+<command> <commandArgs> --mode rpc --session-dir <tmp>/pi-subagents-local/<id>
 ```
+
+**Children are full sessions** (since 2026-10-05): they load extensions (so MCP),
+skills and prompt templates, with no `--tools` allowlist. The first version of this
+engine started children with `--no-extensions --no-skills --no-prompt-templates --tools
+read,grep,find,ls,bash,edit,write`, which left subagents with no MCP tools and no skills —
+`--tools` is an allowlist over built-in, extension *and* MCP tools, so `extensions: true`
+alone would not have brought MCP back. Every flag is still available per config key below.
+
+Because a child now loads this engine too, three guards come with it:
+
+- **Depth cap.** Each child gets `PI_SUBAGENTS_LOCAL_DEPTH=<parent depth + 1>`; a session at
+  `maxDepth` (default 2: main → child → grandchild) refuses to spawn, with a message that
+  tells the agent to do the work itself. Each child has its own `maxConcurrent` pool.
+- **Dialogs are cancelled.** A headless child's `select`/`confirm`/`input`/`editor`
+  extension UI request is answered with `cancelled: true` at once; unanswered, the child
+  would wait forever (there is no default `timeoutMs`).
+- **No tab renames.** `tab-status` and `tmux-window-name` do nothing in a process that
+  carries `PI_SUBAGENTS_LOCAL_DEPTH`.
+
+Verified 2026-10-05: a child lists 9 MCP tools (including `mcp__halo_platform`) and the repo
+skills; a `TaskExecute` subagent called the `halo_platform` MCP end to end; a session at
+depth 2 refused `TaskExecute` with the depth-cap message.
 
 It drives the child over pi's documented `--mode rpc` JSONL protocol (`docs/rpc.md`) rather
 than through any host module, so it does not break when pi's internal API moves.
@@ -189,7 +210,8 @@ install layout anywhere in it:
 - every flag a child gets is configurable, so a host whose pi differs adjusts config instead
   of editing the extension.
 
-Children are ~35 MB RSS instead of ~361 MB inheriting 9 MCP servers, they use real cores for
+With `extensions: false` children are ~35 MB RSS; full children cost more (the MCP
+servers are HTTP with `lifecycle: lazy`, so no server process starts per child). They use real cores for
 their own JS work, and their leaks die with the process. Verified on the fork: 17 agents
 against a cap of 16 held **exactly 16 concurrent children** (largest 140 MB) and finished in
 15.1 s where serial would be ≥85 s; 4 agents doing `sleep 3` finished in 6.7 s; `stop` leaves
@@ -241,11 +263,14 @@ and exits on its own, taking its tool processes with it.
 
 | key | default | meaning |
 | --- | --- | --- |
-| `tools` | read, grep, find, ls, bash, edit, write | tools each child gets |
-| `maxConcurrent` | 16 | fan-out cap; extras queue |
+| `tools` | unset | optional `--tools` allowlist (it hides any tool not listed, MCP included) |
+| `maxConcurrent` | 16 (repo config: 32) | fan-out cap per session; extras queue |
 | `timeoutMs` | none | optional per-agent wall-clock limit; unset or `0` = run until done |
 | `model` / `provider` | unset | child model; unset = host default |
-| `extensions` | false | true = children also load extensions/MCP |
+| `extensions` | true | false = `--no-extensions` (no MCP in children) |
+| `skills` | true | false = `--no-skills` |
+| `promptTemplates` | true | false = `--no-prompt-templates` |
+| `maxDepth` | 2 | sessions at this depth refuse to spawn |
 | `sessionDir` | `<tmp>/pi-subagents-local` | where child sessions are written, or `null` |
 | `command` / `commandArgs` | auto | override how a child is launched |
 | `extraArgs` | `[]` | appended last, for host pi version differences |

@@ -540,7 +540,10 @@ export default function tmuxWindowNameExtension(pi: ExtensionAPI) {
   // session has no UI bound (`hasUI` is false); only the interactive parent
   // owns the tab name. Headless `pi -p` runs lose auto-naming too, which is
   // fine — those windows are transient.
-  const ownsTab = (ctx: ExtensionContext): boolean => ctx.hasUI && !isSubagentSessionName(pi.getSessionName());
+  // pi-subagents-local children are separate processes in the same pane; they
+  // carry PI_SUBAGENTS_LOCAL_DEPTH and never own the tab either.
+  const ownsTab = (ctx: ExtensionContext): boolean =>
+    ctx.hasUI && !process.env.PI_SUBAGENTS_LOCAL_DEPTH && !isSubagentSessionName(pi.getSessionName());
 
   pi.on("session_start", async (_event, ctx) => {
     if (!ownsTab(ctx)) return;
