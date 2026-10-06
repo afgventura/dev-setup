@@ -128,6 +128,10 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
   # the loop, the goal, the subagent count) never reached the footer. Re-run after
   # `pi update --extensions`, which reinstalls the package.
   node "$REPO/pi/patches/statusline-armed-statuses.mjs"
+  # cc-my-pi's git-info runs `git status --untracked-files=all` after every tool call in
+  # every pi process. Many sessions in one checkout then hold .git/index.lock nearly all
+  # the time and every pull or reset fails. Re-run after `pi update --extensions`.
+  node "$REPO/pi/patches/cc-my-pi-no-git-poll.mjs"
   echo "   pi packages install on first run from settings.json → packages"
 
   say "pi package auto-update (launchd: at login and every 12 h)"
