@@ -472,7 +472,7 @@ in place.
 `self-hosted/z-ai/glm-5.3-flash` is our own GLM 5.3 Flash behind the sgl-router
 gateway (`http://10.184.0.50:9000/v1`, GKE ILB over Tailscale, $0). Its key is
 read from Keychain at request time (`apiKey: "!security find-generic-password
-… haloai-shell:SELF_HOSTED_LLM_API_KEY"`), so it doesn't depend on shell env;
+… haloai-shell:SELF_HOSTED_LLM_API_KEY"`), and falls back to the `SELF_HOSTED_LLM_API_KEY` env var where `security` does not exist (Linux, cmx), so subagents never need `--api-key` on the command line;
 store it once with `security add-generic-password -a "$USER" -s
 haloai-shell:SELF_HOSTED_LLM_API_KEY -w "$(gcloud secrets versions access latest
 --secret=SELF_HOSTED_LLM_API_KEY --project=halo-ai-469606)"`. pi reads
