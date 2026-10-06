@@ -5,6 +5,35 @@
 # node_modules and all (25k tracked files, millions untracked across the
 # worktrees); rg/fd honour .gitignore and take well under a second. Exit 2 =
 # block the call and hand the message back to the model.
+# A recursive rm aimed at /, the home folder, or a folder directly under it
+# (~/.config, ~/.pi, ~/Workspace). 2026-10-06: an onboarding subagent ran
+# `rm -rf /home/gery/.config` and logged out gh, gcloud, and gws on the VM.
+input=$(cat)
+home_rm=$(printf '%s' "$input" | python3 -c '
+import json, re, sys
+c = json.load(sys.stdin).get("tool_input", {}).get("command", "")
+c = " ".join(c) if isinstance(c, list) else c
+c = re.sub(r"<<-?\s*[\x27\"]?(\w+)[\x27\"]?[^\n]*\n.*?\n\1(?=\n|$)", "", c, flags=re.S)
+c = c.replace("\x27", "").replace("\"", "")
+root = r"(~|\$\{?HOME\}?|/(home|Users)/[^/\s]+)"
+protected = re.compile(r"^(/\*?|" + root + r"/?\*?|" + root + r"/[^/\s]+/?\*?)$")
+for seg in re.split(r"&&|\|\||[;&|\n()]", c):
+    w = seg.split()
+    while w and (w[0] in ("sudo", "command") or re.match(r"^\w+=", w[0])):
+        w.pop(0)
+    if not w or w[0] != "rm":
+        continue
+    a = w[1:]
+    if not any(re.match(r"^-[a-zA-Z]*[rR]", x) or x == "--recursive" for x in a):
+        continue
+    for x in a:
+        if not x.startswith("-") and protected.match(x):
+            print(x); sys.exit(0)
+' 2>/dev/null)
+if [ -n "$home_rm" ]; then
+  echo "blocked: recursive rm on $home_rm would delete the home folder or a whole folder under it (credentials, sessions, checkouts). Delete only files inside your own run folder, or write to a new folder instead." >&2
+  exit 2
+fi
 bare=$(python3 -c '
 import json, re, sys
 c = json.load(sys.stdin).get("tool_input", {}).get("command", "")
@@ -14,7 +43,7 @@ c = " ".join(c) if isinstance(c, list) else c
 # so a literal "find" in a commit message or in a file being written is fine.
 c = re.sub(r"<<-?\s*[\x27\"]?(\w+)[\x27\"]?[^\n]*\n.*?\n\1(?=\n|$)", "", c, flags=re.S)
 c = re.sub(r"\x27[^\x27]*\x27|\"[^\"]*\"", "", c)
-print(c)' 2>/dev/null) || exit 0
+print(c)' 2>/dev/null <<<"$input") || exit 0
 [ -n "$bare" ] || exit 0
 if printf '%s' "$bare" | grep -Eq '(^|[;&|(]|\s)grep(\s+[^|;&[:space:]]+)*\s+(-[a-zA-Z]*[rR][a-zA-Z]*|--(dereference-)?recursive)(\s|$)'; then
   echo "blocked: recursive grep walks node_modules and every worktree. Use rg (respects .gitignore): rg -n 'pattern' path  — or the Grep tool." >&2
