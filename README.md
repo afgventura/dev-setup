@@ -267,7 +267,7 @@ and exits on its own, taking its tool processes with it.
 | `maxConcurrent` | 16 (repo config: 32) | fan-out cap per session; extras queue |
 | `timeoutMs` | none | optional per-agent wall-clock limit; unset or `0` = run until done |
 | `model` / `provider` | unset | child model; unset = host default |
-| `extensions` | true | false = `--no-extensions` (no MCP in children) |
+| `extensions` | true | false = `--no-extensions` (no MCP in children; `byteplus-pricing.ts` still loads) |
 | `skills` | true | false = `--no-skills` |
 | `promptTemplates` | true | false = `--no-prompt-templates` |
 | `maxDepth` | 2 | sessions at this depth refuse to spawn |
@@ -459,6 +459,14 @@ ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
 away. Its key is deliberately not in `models.json`: pi resolves the `byteplus` credential
 from `auth.json` (`/login`) or the provider's environment variable, so a new machine needs
 that key supplied once before the default model will answer.
+Its price is not in `models.json` either, because BytePlus bills by the time of the
+request: peak is Monday–Friday 09:00–12:00 and 14:00–18:00 UTC+8 (01:00–04:00 and
+06:00–10:00 UTC), and every other time is off-peak at half the rate.
+`pi/extensions/byteplus-pricing.ts` writes the cost of each call from the request time
+(peak in $0.12 / cache-hit $0.006 / out $0.48 per 1M, off-peak half that). `/pricing`
+shows the active window. A pi process without this extension records BytePlus calls at
+$0, so `pi-subagents-local` passes it with `-e` to children that run with
+`--no-extensions`. The cost is pi's estimate. The BytePlus invoice is the real bill.
 `opencode-go-2` is opencode-go again under a second API key (Keychain item
 `haloai-shell:OPENCODE_GO_2_API_KEY`, read with `!security …` at request time),
 mirroring the models we use so two accounts can be billed separately. Note the

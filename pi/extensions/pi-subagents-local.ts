@@ -1029,7 +1029,15 @@ export default function (pi: ExtensionAPI) {
 			typeof options.extensions === "boolean"
 				? options.extensions
 				: config.extensions;
-		if (!extensions) args.push("--no-extensions");
+		if (!extensions) {
+			args.push("--no-extensions");
+			// Cost accounting is not optional. models.json carries no BytePlus price
+			// (the rate depends on the time of day), so a child without the pricing
+			// extension records every call at $0. Explicit -e paths still load
+			// under --no-extensions.
+			const pricing = join(agentDir(), "extensions", "byteplus-pricing.ts");
+			if (existsSync(pricing)) args.push("-e", pricing);
+		}
 		if (!config.skills) args.push("--no-skills");
 		if (!config.promptTemplates) args.push("--no-prompt-templates");
 		// --tools is an allowlist over built-in, extension and MCP tools alike, so
