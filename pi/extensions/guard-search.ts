@@ -43,6 +43,34 @@ export function homeRmReason(command: string): string | undefined {
 	return undefined;
 }
 
+// A search aimed at /, the home folder, or ~/Workspace reads every checkout and
+// worktree on the machine. 2026-10-07: an onboarding worker ran
+// `fd -H sim-gate-task469 /home/gery -d 7` at 318% CPU, the load average reached
+// 28 on 8 CPUs, and the VM restarted 2 times in 30 minutes.
+const WIDE_TARGET = new RegExp(String.raw`^(/|${HOME_ROOT}/?|${HOME_ROOT}/Workspace/?)$`);
+const SEARCH_TOOLS = new Set(["fd", "fdfind", "rg", "find", "grep", "egrep", "ag", "ack", "du", "tree", "locate"]);
+
+export function homeSearchReason(command: string): string | undefined {
+	const code = command
+		.replace(/<<-?\s*['"]?(\w+)['"]?[^\n]*\n[\s\S]*?\n\1(?=\n|$)/g, "")
+		.replace(/['"]/g, "");
+	for (const segment of code.split(/&&|\|\||[;&|\n()]/)) {
+		const words = segment.trim().split(/\s+/).filter(Boolean);
+		while (["sudo", "command", "time", "nice"].includes(words[0] ?? "") || /^\w+=/.test(words[0] ?? "")) words.shift();
+		if (words.length === 0) continue;
+		const tool = (words[0] ?? "").split("/").pop() ?? "";
+		const args = words.slice(1);
+		if (tool === "ls" && !args.some((w) => /^-[a-zA-Z]*R/.test(w))) continue;
+		if (!SEARCH_TOOLS.has(tool) && tool !== "ls") continue;
+		if (tool === "find" && /-maxdepth\s+[012](\s|$)/.test(segment)) continue;
+		const target = args.find((w) => !w.startsWith("-") && WIDE_TARGET.test(w));
+		if (target) {
+			return `blocked: '${tool} ${target}' searches the whole home folder (every checkout and worktree) and can overload this machine. Search one project or one run folder instead, for example: fd -j 2 'name' .tmp/onboarding-loop/<client>  or  rg -j 2 -n 'pattern' <path>.`;
+		}
+	}
+	return undefined;
+}
+
 export function slowSearchReason(command: string): string | undefined {
 	// only the code is inspected: heredoc bodies and quoted strings are dropped,
 	// so a literal "find" in a commit message or a file being written is fine
@@ -65,7 +93,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("tool_call", async (event) => {
 		if (event.toolName !== "bash") return;
 		const command = String((event.input as { command?: unknown })?.command ?? "");
-		const reason = homeRmReason(command) ?? slowSearchReason(command);
+		const reason = homeRmReason(command) ?? homeSearchReason(command) ?? slowSearchReason(command);
 		if (reason) return { block: true, reason };
 	});
 }

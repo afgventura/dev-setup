@@ -34,6 +34,42 @@ if [ -n "$home_rm" ]; then
   echo "blocked: recursive rm on $home_rm would delete the home folder or a whole folder under it (credentials, sessions, checkouts). Delete only files inside your own run folder, or write to a new folder instead." >&2
   exit 2
 fi
+# A search aimed at /, the home folder, or ~/Workspace reads every checkout and
+# worktree on the machine. 2026-10-07: an onboarding worker ran
+# `fd -H sim-gate-task469 /home/gery -d 7` at 318% CPU, the load average reached
+# 28 on 8 CPUs, and the VM restarted 2 times in 30 minutes.
+home_search=$(printf '%s' "$input" | python3 -c '
+import json, re, sys
+c = json.load(sys.stdin).get("tool_input", {}).get("command", "")
+c = " ".join(c) if isinstance(c, list) else c
+c = re.sub(r"<<-?\s*[\x27\"]?(\w+)[\x27\"]?[^\n]*\n.*?\n\1(?=\n|$)", "", c, flags=re.S)
+c = c.replace("\x27", "").replace("\"", "")
+root = r"(~|\$\{?HOME\}?|/(home|Users)/[^/\s]+)"
+wide = re.compile(r"^(/|" + root + r"/?|" + root + r"/Workspace/?)$")
+tools = {"fd", "fdfind", "rg", "find", "grep", "egrep", "ag", "ack", "du", "tree", "locate"}
+for seg in re.split(r"&&|\|\||[;&|\n()]", c):
+    w = seg.split()
+    while w and (w[0] in ("sudo", "command", "time", "nice") or re.match(r"^\w+=", w[0])):
+        w.pop(0)
+    if not w:
+        continue
+    t = w[0].rsplit("/", 1)[-1]
+    if t == "ls" and not any(re.match(r"^-[a-zA-Z]*R", x) for x in w[1:]):
+        continue
+    if t not in tools and t != "ls":
+        continue
+    if t == "find" and re.search(r"-maxdepth\s+[012](\s|$)", seg):
+        continue
+    if t == "du" and re.search(r"(-s\b|--max-depth[= ]?[01]\b|-d\s*[01]\b)", seg):
+        continue
+    for x in w[1:]:
+        if not x.startswith("-") and wide.match(x):
+            print(t + " " + x); sys.exit(0)
+' 2>/dev/null)
+if [ -n "$home_search" ]; then
+  echo "blocked: '$home_search' searches the whole home folder (every checkout and worktree) and can overload this machine. Search one project or one run folder instead, for example: fd -j 2 'name' .tmp/onboarding-loop/<client>  or  rg -j 2 -n 'pattern' <path>." >&2
+  exit 2
+fi
 bare=$(python3 -c '
 import json, re, sys
 c = json.load(sys.stdin).get("tool_input", {}).get("command", "")
