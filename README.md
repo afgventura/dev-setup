@@ -266,7 +266,7 @@ and exits on its own, taking its tool processes with it.
 | `tools` | unset | optional `--tools` allowlist (it hides any tool not listed, MCP included) |
 | `maxConcurrent` | 16 (repo config: 32) | fan-out cap per session; extras queue |
 | `timeoutMs` | none | optional per-agent wall-clock limit; unset or `0` = run until done |
-| `model` / `provider` | unset | child model; unset = host default |
+| `model` / `provider` | unset (repo config: `opencode-go/deepseek-v4.1-flash`) | child model; unset = host default |
 | `extensions` | true | false = `--no-extensions` (no MCP in children; `byteplus-pricing.ts` still loads) |
 | `skills` | true | false = `--no-skills` |
 | `promptTemplates` | true | false = `--no-prompt-templates` |
@@ -293,11 +293,12 @@ on each entry and gives extensions no session total directly; the agent side is 
 processes' own usage, which are not in those entries. Per-agent tokens and cost appear in
 the widget rows, `/agents` rows, and the notification box.
 
-Note this is only as real as the model catalogue's rates: `pi/models.json` currently
-prices the `byteplus` models at **0 for every rate**, so cost reads `$0.00` for the
-session and the agents alike (which is what the footer's `$0.00` has been). Token counts
-are exact regardless; fill in the rates and the dollar figures become real without any
-further change. On another machine: clone this repo and run
+Note this is only as real as the model catalogue's rates. The default model,
+`opencode-go/deepseek-v4.1-flash`, carries rates in the Zen Go catalogue ($0.15 in,
+$0.6 out, $0.003 cached read per 1M), so the session and agent figures are real.
+`pi/models.json` still prices the `byteplus` models at **0 for every rate**, so a
+BytePlus session with `pi/extensions/byteplus-pricing.ts` absent reads `$0.00`. Token
+counts are exact regardless. On another machine: clone this repo and run
 `install.sh pi`, or copy the single `pi-subagents-local.ts` plus `pi/subagents-local.json`
 into that host's agent dir — nothing else is required.
 
@@ -438,9 +439,11 @@ minimal so thinking models return a parseable name.
 It also ignores in-process pi-subagents child sessions (no UI bound, name
 `<agent>#<id>`), which otherwise re-fired its handlers and renamed the tab to
 `general purpose 3f8a8d01` every time the orchestrator spawned a worker.
-`pi/models.json` caps deepseek-v4.1-flash and both muse-spark contributor models at a 500k window (of their nominal 1M) so
-auto-compaction and the ctx meter both work off 500k — cost isn't the constraint
-at $0.003/M cached input; long-context quality and latency are.
+`pi/models.json` caps the opencode-go models at a 400k window of their nominal 1M:
+deepseek-v4.1-flash and both muse-spark contributor models. The BytePlus deepseek
+model takes the same 400k cap. Auto-compaction and the ctx meter both work off that
+limit. Cost is not the constraint at $0.003/M cached input. Long-context quality and
+latency are.
 `tuiMode: fullscreen` renders only the visible part of the transcript on its
 own screen; the default inline mode re-prints the whole transcript through
 tmux on every resume, which is what made resuming a long session slow and
@@ -449,16 +452,18 @@ check at startup (~0.8 s); run `pi update` yourself now and then (extensions are
 kept current by the daemon below).
 `enabledModels` scopes the catalogue to exact `provider/model` entries
 (deepseek-v4.1-flash on opencode-go, the GPT models on openai-codex). Without
-it a bare model name like `gpt-5.6-luna` — which AGENTS.md tells subagents to
-use — resolved to opencode-go's copy and was billed there instead of to the
-ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
+it a bare model name like `gpt-5.6-luna` resolved to opencode-go's copy and was billed
+there instead of to the ChatGPT subscription. Log in once with `/login` → OpenAI Codex.
+`opencode-go/deepseek-v4.1-flash` (opencode Zen Go,
+`https://opencode.ai/zen/go/v1`) is the default provider and model, and
+`modelThinkingLevels` pins it to `high`. The credential comes from `auth.json`
+(`/login`), so a new machine needs that login once before the default model will answer.
 `byteplus/deepseek-v4-1-flash-260910` (BytePlus Ark,
-`https://ark.ap-southeast.bytepluses.com/api/v3`) is the default provider and model, and
-`modelThinkingLevels` pins it to `medium`; Ark takes a reasoning-effort knob
-(`supportsReasoningEffort`), so `medium` is a real step there and pi does not clamp it
-away. Its key is deliberately not in `models.json`: pi resolves the `byteplus` credential
-from `auth.json` (`/login`) or the provider's environment variable, so a new machine needs
-that key supplied once before the default model will answer.
+`https://ark.ap-southeast.bytepluses.com/api/v3`) stays configured as an alternative
+model. Ark takes a reasoning-effort knob (`supportsReasoningEffort`), so `medium` is a real
+step there and pi does not clamp it away; `modelThinkingLevels` keeps that model on
+`medium`. The BytePlus key is deliberately not in `models.json`: pi resolves the `byteplus`
+credential from `auth.json` (`/login`) or the provider's environment variable.
 Its price is not in `models.json` either, because BytePlus bills by the time of the
 request: peak is Monday–Friday 09:00–12:00 and 14:00–18:00 UTC+8 (01:00–04:00 and
 06:00–10:00 UTC), and every other time is off-peak at half the rate.
@@ -467,16 +472,14 @@ request: peak is Monday–Friday 09:00–12:00 and 14:00–18:00 UTC+8 (01:00–
 shows the active window. A pi process without this extension records BytePlus calls at
 $0, so `pi-subagents-local` passes it with `-e` to children that run with
 `--no-extensions`. The cost is pi's estimate. The BytePlus invoice is the real bill.
-`opencode-go-2` is opencode-go again under a second API key (Keychain item
-`haloai-shell:OPENCODE_GO_2_API_KEY`, read with `!security …` at request time),
-mirroring the models we use so two accounts can be billed separately. Note the
-Responses-API models (muse-spark, gpt-5.6-luna) store encrypted reasoning items
-that are bound to the key that issued them: changing a provider's key under a
-running session yields `reasoning encrypted_content was not issued to this
-caller`. pi only replays those items when provider *and* model match, so the
-fix is to switch the session to the other provider id (`/model
-opencode-go-2/<same model>`), which drops the stale items — never swap the key
-in place.
+`opencode-go-2` (opencode-go under a second API key) was **removed** from
+`pi/models.json`: one account bills every call now. The Responses-API models
+(muse-spark, gpt-5.6-luna) store encrypted reasoning items that are bound to the
+key that issued them, so changing a provider's key under a running session yields
+`reasoning encrypted_content was not issued to this caller`. pi only replays those
+items when provider *and* model match. To bill a second account again, add the
+provider back and switch the session to it (`/model opencode-go-2/<same model>`) —
+never swap the key in place.
 `self-hosted/z-ai/glm-5.3-flash` is our own GLM 5.3 Flash behind the sgl-router
 gateway (`http://10.184.0.50:9000/v1`, GKE ILB over Tailscale, $0). Its key is
 read from Keychain at request time (`apiKey: "!security find-generic-password
@@ -519,7 +522,8 @@ built-ins (general-purpose / Explore / Plan) are switched off
 (`pi/subagents.json` → `disableDefaultAgents`), and any `subagent_type` the
 orchestrator makes up falls back to it (`fallbackSubagent`). It is a parent
 twin (all tools, same system prompt and skills) pinned to `model:
-openai-codex/gpt-5.6-luna`, `thinking: medium` — frontmatter is authoritative
+opencode-go/deepseek-v4.1-flash`, `thinking: high` — `medium` is not a level this
+model offers, and pi resolved it up to `high` — frontmatter is authoritative
 in pi-subagents, so the orchestrating model cannot pick another model for a
 subagent. Linked into `~/.pi/agent/agents/`; a project-local
 `.pi/agents/<name>.md` still wins.

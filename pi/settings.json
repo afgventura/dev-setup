@@ -6,8 +6,8 @@
     "npm:@juicesharp/rpiv-ask-user-question"
   ],
   "theme": "light",
-  "defaultProvider": "byteplus",
-  "defaultModel": "deepseek-v4-1-flash-260910",
+  "defaultProvider": "opencode-go",
+  "defaultModel": "deepseek-v4.1-flash",
   "hideThinkingBlock": true,
   "quietExtensionWarnings": true,
   "quietStartup": true,

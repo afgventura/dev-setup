@@ -1,4 +1,5 @@
 {
+  "model": "opencode-go/deepseek-v4.1-flash",
   "maxConcurrent": 32,
   "timeoutMs": 0,
   "extensions": true,
