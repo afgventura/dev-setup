@@ -205,6 +205,7 @@ export default Plugin.define({
             sessionID,
             timer: setTimeout(() => {
               wakeup = undefined
+              announce(sessionID)
               deliver(sessionID, `[wake-up${reason ? ` — ${reason}` : ""}]\n${prompt}`)
             }, delay * 1_000),
           }
