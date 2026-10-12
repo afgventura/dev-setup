@@ -118,6 +118,7 @@ launchd/                  LaunchAgents: vite-watchdog (kills agent-started Vite 
 pi/pi-package-update.sh   keeps pi's extension packages current so the update banner stops
 pi/                       pi coding agent: settings, models (context window), MCP servers, extensions
 pi/build-fork.sh          builds afgventura/pi and installs it as the global pi
+opencode/plugins/         OpenCode plugins: loop (timers), goal (session goals); server + TUI entries
 infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 .agents/skills/           agent skills (.claude/skills/* are symlinks to them, for Claude Code)
 ```
@@ -528,6 +529,30 @@ in pi-subagents, so the orchestrating model cannot pick another model for a
 subagent. Linked into `~/.pi/agent/agents/`; a project-local
 `.pi/agents/<name>.md` still wins.
 Skills are provided by those packages, not vendored here.
+
+## OpenCode
+
+`install.sh opencode` links two plugins into `~/.config/opencode/plugins/` and lists
+them under `plugins` in `~/.config/opencode/opencode.json`. Each plugin has a server
+entry (`index.ts`), a shared RPC definition (`rpc.ts`) and a TUI entry (`tui.tsx`).
+OpenCode loads the TypeScript directly, so there is no build step.
+
+- `loop` ports pi's `/loop`: `/loop [5m] <prompt>`, `/loop status`, `/loop stop`, and
+  the `schedule_wakeup`, `loop_start`, `loop_stop` tools. One interval loop or one
+  wake-up exists per session. The timer lives in the background service, so it
+  survives a TUI restart and is lost on a service restart.
+- `goal` ports pi's `/goal`: `/goal [<objective>|edit|pause|resume|clear]`, and the
+  `create_goal`, `update_goal`, `get_goal` tools. One goal belongs to the session that
+  created it. The goal block goes into every model call through the `context` hook, so
+  it never stacks in the transcript. pi drives one more turn when a run settles;
+  OpenCode has no settle hook, so the plugin asks for the continuation from the
+  `session.execution.succeeded` event, capped by `OPENCODE_GOAL_MAX_CONTINUATIONS`
+  (or `PI_GOAL_MAX_CONTINUATIONS`; `0` is unlimited, default 50).
+
+The TUI runs in a separate process from the server, so each server plugin registers an
+RPC (`gery.loop`, `gery.goal`) and the TUI reads state there. Both show a footer status
+(the running loop or wake-up, and the active goal) and the goal also shows a sidebar
+widget with its objective and status.
 
 ## Skills
 
