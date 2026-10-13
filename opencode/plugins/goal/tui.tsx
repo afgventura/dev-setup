@@ -33,10 +33,15 @@ function colorFor(status: string, theme: Theme): unknown {
   }
 }
 
+/** Keep the footer on one line: flatten whitespace, then cut the text to a bounded width. */
+function clampLine(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim()
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`
+}
+
 function footerText(goal: GoalStatus["goal"]): string | undefined {
   if (!goal) return undefined
-  const flat = goal.objective.replace(/\s+/g, " ").trim()
-  const short = flat.length <= 30 ? flat : `${flat.slice(0, 29)}…`
+  const short = clampLine(goal.objective, 30)
   const tokens = goal.tokenBudget === undefined ? formatTokens(goal.tokensUsed) : `${formatTokens(goal.tokensUsed)}/${formatTokens(goal.tokenBudget)}`
   return `🎯 ${short} · ${statusLabel(goal.status)} · ${tokens}`
 }
@@ -82,7 +87,11 @@ export default Plugin.define({
         const goal = state[sessionID]?.goal
         const text = footerText(goal)
         if (!text || !goal) return <></>
-        return <text fg={colorFor(goal.status, theme)}>{text}</text>
+        return (
+          <text fg={colorFor(goal.status, theme)} wrapMode="none" truncate>
+            {text}
+          </text>
+        )
       },
     })
 

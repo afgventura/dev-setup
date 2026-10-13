@@ -6,12 +6,19 @@ import { LoopRpc, type LoopStatus } from "./rpc"
  * wake-up of the current session. Reads state from the server plugin over RPC.
  */
 
+/** Keep the footer on one line: flatten whitespace, then cut the text to a bounded width. */
+function clampLine(text: string, max = 48): string {
+  const flat = text.replace(/\s+/g, " ").trim()
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`
+}
+
 function labelFor(entry: LoopStatus | undefined): string | undefined {
   if (!entry) return undefined
   if (entry.loop) return `↻ ${entry.loop.label} #${entry.loop.runs}`
   if (entry.wakeup) {
     const at = new Date(entry.wakeup.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    return `⏰ ${at}${entry.wakeup.reason ? ` · ${entry.wakeup.reason}` : ""}`
+    const reason = entry.wakeup.reason ? clampLine(entry.wakeup.reason) : ""
+    return `⏰ ${at}${reason ? ` · ${reason}` : ""}`
   }
   return undefined
 }
@@ -56,7 +63,11 @@ export default Plugin.define({
         refresh(sessionID)
         const label = labelFor(state[sessionID])
         if (!label) return <></>
-        return <text fg={context.theme.text.base}>{label}</text>
+        return (
+          <text fg={context.theme.text.base} wrapMode="none" truncate>
+            {label}
+          </text>
+        )
       },
     })
 
