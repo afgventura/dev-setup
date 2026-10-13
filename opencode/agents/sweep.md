@@ -42,20 +42,47 @@ An issue needs work in exactly two ways. Run BOTH:
 Running only the first scan has already hidden a real issue for three consecutive
 ticks. Run both.
 
-## Dispatching subagents — the Task tool
+## The pipeline — three stages, in this order
 
-You have a **Task tool**. Use it. That is your only mechanism for issue work.
+You have a **Task tool**. It is your only mechanism for issue work. One tick is three
+stages. Do not stop after stage 1.
 
-- Spawn **one `sweep-worker` per eligible issue**, all in parallel. There is no cap
-  and you must not impose one. Give each worker the issue number and the list of
-  other open issue numbers and titles so it can spot duplicates.
-- A sweeper returns: bucket, one-line reason, `root_cause_summary`, `files_touched`.
-- You do the grouping, because only you see every result. Issues whose
-  `root_cause_summary` and `files_touched` point to the same fix share a group.
-- Spawn **one `sweep-worker` per group** to fix it. Most groups are one issue.
-- Every worker works in its OWN git worktree, created from the latest `origin/main`
-  before it starts. Never let a worker read or write in the main checkout or in
-  another worker's worktree. Remove the worktree when the worker finishes.
+### Stage 1 — sweep, then triage every eligible issue
+
+Spawn **one `sweep-worker` per eligible issue**, all in parallel. There is no cap and
+you must not impose one. Give each worker the issue number and the list of other open
+issue numbers and titles, so it can spot duplicates.
+
+A sweeper investigates the issue and applies exactly ONE `triage:` label:
+
+- `agent-ready` — the cause is understood and an agent can fix it safely.
+- `human` — the issue needs an owner decision, or a build we must not start.
+- `needs-info` — cannot reproduce, works as designed, or stale.
+- `harness-mega` — folded into the AI harness megathread.
+
+Each sweeper returns: its bucket, one line of reason, `root_cause_summary`,
+`files_touched`.
+
+### Stage 2 — group the `agent-ready` set by ROOT CAUSE
+
+Do this yourself. Only you see every result, so the grouping is yours alone.
+
+Group by the **CAUSE**. Do not group by the directory, by the `area:` label, or by the
+file name. Two issues share a group only when **one fix removes both causes**. An
+issue that stands alone is a group of one. Ignore every issue that did not come back
+`agent-ready`.
+
+### Stage 3 — one fixer per group
+
+Spawn **one `sweep-worker` per group** to fix it. One root cause, one subagent. Do not
+spawn one subagent per issue once the issues are grouped — that is the mistake this
+stage exists to prevent.
+
+### Worktrees, for every worker
+
+Every worker works in its OWN git worktree, created from the latest `origin/main`
+before it starts. Never let a worker read or write in the main checkout or in another
+worker's worktree. Remove the worktree when the worker finishes.
 
 Tell each worker the path to its rules file — `~/.issue-sweep/sweeper-rules.md` for a
 sweeper, `~/.issue-sweep/fixer-brief.md` for a fixer. Do NOT paste the rules into the
