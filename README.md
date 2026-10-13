@@ -118,7 +118,7 @@ launchd/                  LaunchAgents: vite-watchdog (kills agent-started Vite 
 pi/pi-package-update.sh   keeps pi's extension packages current so the update banner stops
 pi/                       pi coding agent: settings, models (context window), MCP servers, extensions
 pi/build-fork.sh          builds afgventura/pi and installs it as the global pi
-opencode/plugins/         OpenCode plugins: loop (timers), goal (session goals); server + TUI entries
+opencode/plugins/         OpenCode plugins: loop (timers), goal (session goals), compaction-clean; server + TUI entries
 infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 .agents/skills/           agent skills (.claude/skills/* are symlinks to them, for Claude Code)
 ```
@@ -532,8 +532,8 @@ Skills are provided by those packages, not vendored here.
 
 ## OpenCode
 
-`install.sh opencode` links two plugins into `~/.config/opencode/plugins/` and lists
-them under `plugins` in `~/.config/opencode/opencode.json`. Each plugin has a server
+`install.sh opencode` links three plugins into `~/.config/opencode/plugins/` and lists
+them under `plugins` in `~/.config/opencode/opencode.json`. The first two have a server
 entry (`index.ts`), a shared RPC definition (`rpc.ts`) and a TUI entry (`tui.tsx`).
 OpenCode loads the TypeScript directly, so there is no build step.
 
@@ -548,11 +548,20 @@ OpenCode loads the TypeScript directly, so there is no build step.
   OpenCode has no settle hook, so the plugin asks for the continuation from the
   `session.execution.succeeded` event, capped by `OPENCODE_GOAL_MAX_CONTINUATIONS`
   (or `PI_GOAL_MAX_CONTINUATIONS`; `0` is unlimited, default 50).
+- `compaction-clean` removes the `<template>` wrapper that OpenCode's summary
+  compaction leaves behind. The compaction prompt tells the model not to include the
+  tags, and OpenCode checks only that a required `##` heading is present. When the
+  model keeps the tags, they are stored in the summary and shown in the timeline. No
+  hook exposes the finished summary, so this plugin rewrites the compaction HTTP
+  response. It parses the SSE deltas, joins their text, strips the two tags, and puts
+  the result into the first content delta. A tag split across chunks still matches. Any
+  line it cannot parse passes through unchanged, so a provider change degrades to "no
+  fix", never to a broken compaction.
 
-The TUI runs in a separate process from the server, so each server plugin registers an
-RPC (`gery.loop`, `gery.goal`) and the TUI reads state there. Both show a footer status
-(the running loop or wake-up, and the active goal) and the goal also shows a sidebar
-widget with its objective and status.
+The TUI runs in a separate process from the server, so the `loop` and `goal` server
+plugins each register an RPC (`gery.loop`, `gery.goal`) and the TUI reads state there.
+Both show a footer status (the running loop or wake-up, and the active goal) and the
+goal also shows a sidebar widget with its objective and status.
 
 ## Skills
 

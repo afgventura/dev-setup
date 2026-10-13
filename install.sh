@@ -153,20 +153,20 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
 fi
 
 if [ "$what" = all ] || [ "$what" = opencode ]; then
-  say "opencode plugins (loop timers, session goals, TUI status)"
+  say "opencode plugins (loop timers, session goals, compaction tags, TUI status)"
   OC="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
   mkdir -p "$OC/plugins"
-  for p in loop goal; do link "$REPO/opencode/plugins/$p" "$OC/plugins/$p"; done
+  for p in loop goal compaction-clean; do link "$REPO/opencode/plugins/$p" "$OC/plugins/$p"; done
   C="$OC/opencode.json"; [ -f "$C" ] || echo '{}' > "$C"
-  # Drop any managed entry under plugins/ first, then re-add both, so this is idempotent.
+  # Drop any managed entry under plugins/ first, then re-add all, so this is idempotent.
   jq --arg dir "$OC/plugins" '
     .plugins = (
       (((.plugins // []) | map(select((type == "string" and startswith($dir + "/")) | not)))
-       + [$dir + "/loop", $dir + "/goal"])
+       + [$dir + "/loop", $dir + "/goal", $dir + "/compaction-clean"])
       | unique
     )
   ' "$C" > "$C.tmp" && mv "$C.tmp" "$C"
-  echo "   linked $OC/plugins/{loop,goal}; listed in $C"
+  echo "   linked $OC/plugins/{loop,goal,compaction-clean}; listed in $C"
   echo "   OpenCode reloads config live; restart the service if a plugin does not appear"
 fi
 
