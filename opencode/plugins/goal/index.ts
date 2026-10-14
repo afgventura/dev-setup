@@ -225,9 +225,15 @@ export default Plugin.define({
       await pending
     }
 
+    /**
+     * Write the goal, or drop the stored row when the session has none.
+     * This must use `remove`: a null value is not stored, so writing `null`
+     * left the previous goal in storage and a later load resurrected it.
+     */
     function persist(sessionID: SessionID): void {
       const goal = goals.get(sessionID)
-      void ctx.storage.set(key(sessionID), goal ?? null).catch(() => {})
+      const write = goal === undefined ? ctx.storage.remove(key(sessionID)) : ctx.storage.set(key(sessionID), goal)
+      void write.catch(() => {})
     }
 
     async function currentTokens(sessionID: SessionID): Promise<number> {
@@ -419,16 +425,14 @@ export default Plugin.define({
           }
 
           if (sub === "clear") {
-            if (!goals.has(sessionID)) {
-              note(sessionID, "No goal to clear.")
-              return
-            }
+            const had = goals.has(sessionID)
             goals.delete(sessionID)
             continuations.set(sessionID, 0)
             capWarned.set(sessionID, false)
+            // Always persist: this also removes a stored row left by an older version.
             persist(sessionID)
             announce(sessionID)
-            note(sessionID, "Goal cleared.")
+            note(sessionID, had ? "Goal cleared." : "No goal to clear.")
             return
           }
 
