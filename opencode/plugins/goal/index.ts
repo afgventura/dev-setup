@@ -20,6 +20,16 @@
  * so this plugin requests the continuation from the `session.execution.succeeded`
  * event, guarded by a continuation cap. The cap is OPENCODE_GOAL_MAX_CONTINUATIONS
  * (or PI_GOAL_MAX_CONTINUATIONS); 0 means unlimited. Default 50.
+ *
+ * OpenCode loads one plugin instance per location and may keep an earlier instance
+ * alive after a reload. Every instance subscribes to the same event stream, so a
+ * goal held in instance memory diverges: an update_goal handled by one instance
+ * left the others on their stale "active" copy, and each stale instance requested
+ * its own continuation. A blocked goal therefore kept looping.
+ *
+ * All goal state lives in one process-wide registry on `globalThis`, so every
+ * instance reads and writes the same objects. Settle events are keyed by their
+ * event id, so only the first instance to see one continues the goal.
  */
 
 import { Plugin } from "@opencode/plugin"
@@ -46,6 +56,47 @@ interface GoalState {
 
 const MAX_CONTINUATIONS_DEFAULT = 50
 const UNFINISHED: readonly GoalStatus[] = ["active", "paused", "blocked", "budget_limited"]
+/** Handled settle events kept for duplicate suppression; older entries are dropped first. */
+const HANDLED_LIMIT = 256
+
+/**
+ * Goal state shared by every instance of this plugin in the OpenCode process.
+ * Instances share one event stream and one storage namespace, so they must share
+ * one copy of the state or they diverge (see the file header).
+ */
+interface GoalRegistry {
+  goals: Map<SessionID, GoalState>
+  loaded: Map<SessionID, Promise<void>>
+  /** Automatic continuations since the user last spoke. */
+  continuations: Map<SessionID, number>
+  capWarned: Map<SessionID, boolean>
+  /** Turn start time per session, for goal time accounting. */
+  turnStart: Map<SessionID, number>
+  /** Last computed usage per session, so a sync announcement can show it. */
+  usedCache: Map<SessionID, number>
+  /** Settle event id -> seen time, so a second instance cannot recount or re-continue one run. */
+  handled: Map<string, number>
+}
+
+type GoalRegistryHolder = typeof globalThis & { __opencodeGoalRegistry?: GoalRegistry }
+
+function goalRegistry(): GoalRegistry {
+  const holder = globalThis as GoalRegistryHolder
+  let registry = holder.__opencodeGoalRegistry
+  if (!registry) {
+    registry = {
+      goals: new Map(),
+      loaded: new Map(),
+      continuations: new Map(),
+      capWarned: new Map(),
+      turnStart: new Map(),
+      usedCache: new Map(),
+      handled: new Map(),
+    }
+    holder.__opencodeGoalRegistry = registry
+  }
+  return registry
+}
 
 const isUnfinished = (status: GoalStatus): boolean => UNFINISHED.includes(status)
 const statusLabel = (status: GoalStatus): string => (status === "budget_limited" ? "budget limited" : status)
@@ -129,16 +180,17 @@ export default Plugin.define({
   id: "goal",
 
   async setup(ctx) {
-    const goals = new Map<SessionID, GoalState>()
-    const loaded = new Map<SessionID, Promise<void>>()
-    /** Automatic continuations since the user last spoke. */
-    const continuations = new Map<SessionID, number>()
-    const capWarned = new Map<SessionID, boolean>()
-    /** Turn start time per session, for goal time accounting. */
-    const turnStart = new Map<SessionID, number>()
+    const registry = goalRegistry()
+    const {
+      goals,
+      loaded,
+      continuations,
+      capWarned,
+      turnStart,
+      usedCache,
+      handled,
+    } = registry
 
-    // Last computed usage per session, so a sync announcement can show it.
-    const usedCache = new Map<SessionID, number>()
     // Filled in after the RPC registers below; a safe no-op until then.
     let announce: (sessionID: SessionID) => void = () => {}
 
@@ -486,6 +538,20 @@ export default Plugin.define({
             event.type === "session.execution.interrupted"
           if (!settled) continue
 
+          // Each instance holds its own subscription, so the same settle arrives once
+          // per live instance. Handle it once, whoever gets there first.
+          const eventID = (event as { id?: string }).id
+          if (eventID !== undefined) {
+            if (handled.has(eventID)) continue
+            handled.set(eventID, Date.now())
+            if (handled.size > HANDLED_LIMIT) {
+              for (const [id, seenAt] of handled) {
+                handled.delete(id)
+                if (handled.size <= HANDLED_LIMIT) break
+              }
+            }
+          }
+
           const started = turnStart.get(sessionID)
           turnStart.delete(sessionID)
 
@@ -535,12 +601,7 @@ export default Plugin.define({
 
     return async () => {
       controller.abort()
-      goals.clear()
-      loaded.clear()
-      continuations.clear()
-      capWarned.clear()
-      turnStart.clear()
-      usedCache.clear()
+      // Goal state is shared and durable: a reload must not drop a live goal.
       await rpc.dispose()
       await contextHook.dispose()
       await promptHook.dispose()

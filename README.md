@@ -548,6 +548,11 @@ OpenCode loads the TypeScript directly, so there is no build step.
   OpenCode has no settle hook, so the plugin asks for the continuation from the
   `session.execution.succeeded` event, capped by `OPENCODE_GOAL_MAX_CONTINUATIONS`
   (or `PI_GOAL_MAX_CONTINUATIONS`; `0` is unlimited, default 50).
+  OpenCode loads one instance per location and keeps an earlier instance alive after
+  some reloads. Every instance subscribes to the same event stream. The plugin
+  therefore keeps its goal state in one process-wide registry, and it handles each
+  settle event once by event id. Without those two, a second instance held a stale
+  active goal, so a blocked goal kept looping.
 - `compaction-clean` removes the `<template>` wrapper that OpenCode's summary
   compaction leaves behind. The compaction prompt tells the model not to include the
   tags, and OpenCode checks only that a required `##` heading is present. When the
