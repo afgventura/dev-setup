@@ -17,6 +17,27 @@ link() {  # link SRC DST — symlink, backing up a real file if one is in the wa
   ln -sfn "$src" "$dst"
 }
 
+# Chrome MCP native server port. 12306 is the bridge's own default, and it is
+# what a plain machine and the cloud machine use. A machine where something else
+# already owns 12306 sets a free port here, and every re-run keeps it:
+#   CHROME_MCP_PORT=12399, or a one-line file ~/.config/dev-setup/chrome-mcp-port
+# On this Mac, `cmx forward --auto` mirrors the cloud machine's own 12306.
+CHROME_MCP_PORT="${CHROME_MCP_PORT:-$(cat "${XDG_CONFIG_HOME:-$HOME/.config}/dev-setup/chrome-mcp-port" 2>/dev/null || true)}"
+CHROME_MCP_PORT="${CHROME_MCP_PORT:-12306}"
+CHROME_MCP_URL="http://127.0.0.1:${CHROME_MCP_PORT}/mcp"
+
+port_chrome_mcp_json() {  # port_chrome_mcp_json FILE — pi's mcp-adapter.json shape
+  local url
+  url=$(jq -r '((.mcpServers // {})["chrome-mcp"] // {}) | .url // empty' "$1")
+  [ -n "$url" ] || return 0
+  jq --arg u "$CHROME_MCP_URL" '.mcpServers["chrome-mcp"].url = $u' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+
+port_chrome_mcp_toml() {  # port_chrome_mcp_toml FILE — Codex [mcp_servers.chrome-mcp]
+  grep -q '^\[mcp_servers\.chrome-mcp\]' "$1" || return 0
+  sed "/^\[mcp_servers\.chrome-mcp\]/,/^\[/ s|^url = .*|url = \"${CHROME_MCP_URL}\"|" "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+
 if [ "$what" = all ] || [ "$what" = terminal ]; then
   say "dependencies (brew)"
   for f in ghostty; do brew list --cask "$f" >/dev/null 2>&1 || brew install --cask "$f"; done
@@ -67,6 +88,8 @@ EOF
   if ! grep -q "agent-notify.sh" "$C"; then
     printf '\n' >> "$C"; sed "s|~/.config|$HOME/.config|" "$REPO/codex/config.snippet.toml" >> "$C"
   fi
+  port_chrome_mcp_toml "$C"
+  echo "   chrome-mcp url: $CHROME_MCP_URL"
 
   say "reload (live sessions)"
   tmux source-file "$HOME/.tmux.conf" 2>/dev/null || true
@@ -92,6 +115,9 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
       jq -s '.[0] * .[1]' "$PI_AGENT/$f" "$REPO/pi/$f" > "$PI_AGENT/$f.tmp" && mv "$PI_AGENT/$f.tmp" "$PI_AGENT/$f"
     else cp "$REPO/pi/$f" "$PI_AGENT/$f"; fi
   done
+  # The merge writes the repo's 12306, so re-apply this machine's port after it.
+  port_chrome_mcp_json "$PI_AGENT/mcp-adapter.json"
+  echo "   chrome-mcp url: $CHROME_MCP_URL"
   # Subagent children are full sessions now; drop the old slim-child tool allowlist,
   # which hid every extension and MCP tool (the merge above cannot remove a key).
   jq 'del(.tools)' "$PI_AGENT/subagents-local.json" > "$PI_AGENT/subagents-local.json.tmp" \

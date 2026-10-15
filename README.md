@@ -111,7 +111,8 @@ tmux/selftest.sh          acceptance test (quits/relaunches Ghostty, ~25 s)
 tmux/clicktest.py         injects real mouse bytes to test sidebar clicks
 agent-notifier/           Swift source + build script for the notifier app
 claude/hooks.json         hook entries merged into ~/.claude/settings.json
-codex/config.snippet.toml notify hook + shared Chrome MCP over HTTP
+codex/config.snippet.toml notify hook + shared Chrome MCP over HTTP (port from
+                          CHROME_MCP_PORT / ~/.config/dev-setup/chrome-mcp-port)
 ssh/config.snippet        ControlMaster for github.com (fetch 3.2 s → 1.2 s)
 launchd/                  LaunchAgents: vite-watchdog (kills agent-started Vite dev
                           servers every 5 s) and pi-package-update (extensions)
@@ -326,6 +327,18 @@ OAuth server (`halo_platform`, `cloudsql-*`, `axiom`, `slack-local`, `chrome-mcp
 startup print `Skipped "halo_platform" (auth.provider must be a provider name) …`:
 pi rejected them, and the adapter reported them as skipped while it read pi's file.
 Definitions belong in exactly one of the two.
+
+The shared Chrome MCP native server listens on 12306, which is the bridge's own
+default. A machine where something else already owns that port sets a free port in
+`CHROME_MCP_PORT` or in a one-line `~/.config/dev-setup/chrome-mcp-port` file; on
+this Mac `cmx forward --auto` mirrors the cloud machine's own 12306, so 12399 is
+set there. `install.sh` writes that port into `~/.codex/config.toml` and
+`<agent dir>/mcp-adapter.json` after the repo values, so a re-run cannot revert it
+— the pi merge in particular writes the repo's 12306 over the live file. The repo
+keeps 12306, which is what the cloud machine needs. Verified: with no override both
+files resolve to 12306; with the env var or the file both resolve to the given
+port; unrelated `127.0.0.1` ports in both files are untouched; and a second run
+leaves both files byte-identical.
 
 
 The task widget above the editor is capped: cc-my-pi declares `maxVisible` (default 10)
