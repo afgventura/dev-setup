@@ -9,7 +9,7 @@
  *
  * Tools the agent can call:
  *   create_goal(objective, token_budget?)  start a goal when the user asks for one
- *   update_goal(status, reasoning?)        mark it complete, blocked, or paused
+ *   update_goal(status, reasoning?)        complete, block, pause, or resume a blocked goal
  *   get_goal()                             read status, budget, usage
  *
  * One goal belongs to the session that created it. The goal block is injected
@@ -33,7 +33,7 @@
  */
 
 import { Plugin } from "@opencode/plugin"
-import { GoalRpc, type GoalStatus } from "./rpc"
+import { GoalRpc, type GoalStatus as GoalSnapshot } from "./rpc"
 
 type SessionID = string
 
@@ -156,7 +156,13 @@ function goalContextText(goal: GoalState, used: number): string {
   } else if (goal.status === "paused") {
     lines.push("This goal is paused at the user's request. Do not work on it; the user resumes it with /goal resume.")
   } else if (goal.status === "blocked") {
-    lines.push("This goal is blocked. Do not continue work on it; report the blocker and wait for the user (/goal resume restarts it, /goal clear removes it).")
+    lines.push(
+      "This goal is blocked. Check whether the latest user reply or available evidence resolves every reported blocker.",
+      'If every blocker is resolved, call update_goal with status "active" and explain the evidence in reasoning. Then continue work immediately.',
+      "Do not require /goal resume after the user supplies the missing decision or authorization.",
+      "If any blocker remains, keep the goal blocked and report only what is still needed.",
+      "Never treat unrelated input as approval. Preserve scope, authorization, pause, and token-budget limits.",
+    )
   } else if (goal.status === "budget_limited") {
     lines.push("This goal has exhausted its token budget, so goal work is stopped. Report status and wait for the user (/goal resume continues it, /goal edit changes the objective).")
   } else {
@@ -194,7 +200,7 @@ export default Plugin.define({
     // Filled in after the RPC registers below; a safe no-op until then.
     let announce: (sessionID: SessionID) => void = () => {}
 
-    const snapshot = (sessionID: SessionID): GoalStatus => {
+    const snapshot = (sessionID: SessionID): GoalSnapshot => {
       const goal = goals.get(sessionID)
       if (!goal) return { sessionID }
       return {
@@ -362,14 +368,15 @@ export default Plugin.define({
       editor.add({
         name: "update_goal",
         description:
-          "Report this session's goal as complete, blocked, or paused at the user's explicit request. Completion is a claim " +
+          "Report this session's goal as complete or blocked. Pause only at the user's explicit request. " +
+          'Use status "active" to resume a blocked goal only after every blocker is resolved. Include evidence in reasoning. ' +
+          "Do not resume paused, complete, or budget-limited goals through this tool. Completion is a claim " +
           "that the whole objective is finished and can withstand requirement-by-requirement scrutiny; when evidence is " +
-          "incomplete, weak or leaves a requirement unverified, keep working instead. Resume and budget statuses are " +
-          "controlled by the user or the system, not by this tool.",
+          "incomplete, weak or leaves a requirement unverified, keep working instead.",
         input: {
           type: "object",
           properties: {
-            status: { type: "string", enum: ["complete", "blocked", "paused"], description: 'New status: "complete", "blocked", or "paused" (pause only when the user asked).' },
+            status: { type: "string", enum: ["active", "complete", "blocked", "paused"], description: 'Use "active" only to resume a blocked goal after every blocker is resolved. Pause only when the user asked.' },
             reasoning: { type: "string", description: "Short evidence or blocker report recorded with the status change." },
           },
           required: ["status"],
@@ -377,7 +384,7 @@ export default Plugin.define({
         },
         execute: async (input, context) => {
           await load(context.sessionID)
-          const params = input as { status: "complete" | "blocked" | "paused"; reasoning?: string }
+          const params = input as { status: "active" | "complete" | "blocked" | "paused"; reasoning?: string }
           const sessionID = context.sessionID
           const goal = goals.get(sessionID)
           if (!goal) return { content: "Cannot update the goal because this session has no goal." }
@@ -386,6 +393,25 @@ export default Plugin.define({
           }
           if (goal.status === "budget_limited") {
             return { content: `Goal ${goal.id} is budget limited — the user's token budget was exhausted, and that status takes precedence over "${params.status}". Report the state and wait for the user.`, metadata: { ...goal } }
+          }
+
+          if (params.status === "active") {
+            if (goal.status !== "blocked") {
+              return { content: `Cannot resume goal ${goal.id} from status "${goal.status}". Only blocked goals support agent resume.`, metadata: { ...goal } }
+            }
+            if (!params.reasoning?.trim()) {
+              return { content: "To resume this blocked goal, supply reasoning that explains how every blocker was resolved.", metadata: { ...goal } }
+            }
+            const used = (await usedTokens(sessionID))?.used ?? 0
+            // Recheck after the asynchronous usage read. A user pause must take precedence.
+            if (goals.get(sessionID) !== goal || goal.status !== "blocked") {
+              return { content: "The goal changed during the resume check. Read get_goal before another update." }
+            }
+            if (goal.tokenBudget !== undefined && used >= goal.tokenBudget) {
+              return { content: "Cannot resume this goal because its token budget is exhausted. Wait for the user.", metadata: { ...goal } }
+            }
+            continuations.set(sessionID, 0)
+            capWarned.set(sessionID, false)
           }
 
           goal.status = params.status
@@ -401,7 +427,9 @@ export default Plugin.define({
               ? `Goal ${goal.id} marked complete. ${usage}.`
               : params.status === "blocked"
                 ? `Goal ${goal.id} marked blocked: ${goal.lastReasoning ?? "no reason given"}. ${usage}.`
-                : `Goal ${goal.id} marked paused at the user's request. ${usage}.`
+                : params.status === "active"
+                  ? `Goal ${goal.id} resumed: ${goal.lastReasoning}. ${usage}. Continue the next unfinished step now.`
+                  : `Goal ${goal.id} marked paused at the user's request. ${usage}.`
           return { content, metadata: { ...goal } }
         },
       })
