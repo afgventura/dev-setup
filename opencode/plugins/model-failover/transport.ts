@@ -36,15 +36,24 @@ export async function forward(input: {
     }
     input.log(`dispatch actual=${key(route)}`)
     let next: Response
+    // Bound time-to-headers only. A timeout signal on fetch also aborts the
+    // response body, which kills long streams with a TimeoutError.
+    const connection = new AbortController()
+    const timer = setTimeout(
+      () => connection.abort(new DOMException("The operation timed out.", "TimeoutError")),
+      120_000,
+    )
     try {
       next = await (input.fetcher ?? fetch)(`${endpoint.baseURL.replace(/\/$/, "")}/chat/completions`, {
         method: "POST", headers, body: JSON.stringify(body),
-        signal: AbortSignal.any([input.request.signal, AbortSignal.timeout(120_000)]),
+        signal: AbortSignal.any([input.request.signal, connection.signal]),
       })
     } catch {
       input.request.signal.throwIfAborted()
       input.log(`failed actual=${key(route)} reason=transport`)
       continue
+    } finally {
+      clearTimeout(timer)
     }
     await response.body?.cancel()
     response = next
