@@ -3,6 +3,7 @@ import { appendFileSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { Model, Plugin, Provider } from "@opencode/plugin"
 import { forward, type Route } from "./transport"
+import { requestState } from "./request-state"
 
 export default Plugin.define({
   id: "model-failover",
@@ -16,14 +17,14 @@ export default Plugin.define({
         const sourceModel = source?.models.get("deepseek-v4.1-flash-free")
         if (!source || !sourceModel) return
         editor.add({
-          info: { ...source.provider, id: autoProviderID, name: "Auto Failover" },
+          info: { ...source.provider, id: autoProviderID, name: "Auto" },
           models: [{
             ...sourceModel, providerID: autoProviderID, id: autoModelID,
-            name: "DeepSeek V4.1 Flash — Auto",
+            name: "DeepSeek V4.1 Flash",
           }],
         })
       })
-    const pending = new WeakMap<Request, string>()
+    const { pending } = requestState
     const log = (message: string) => {
       if (typeof options.logFile !== "string") return
       try { appendFileSync(options.logFile, `${new Date().toISOString()} http-v2 ${message}\n`) } catch {}
