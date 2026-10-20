@@ -119,7 +119,7 @@ launchd/                  LaunchAgents: vite-watchdog (kills agent-started Vite 
 pi/pi-package-update.sh   keeps pi's extension packages current so the update banner stops
 pi/                       pi coding agent: settings, models (context window), MCP servers, extensions
 pi/build-fork.sh          builds afgventura/pi and installs it as the global pi
-opencode/plugins/         OpenCode plugins: loop (timers), goal (session goals), compaction-clean; server + TUI entries
+opencode/plugins/         OpenCode plugins: loop (timers), goal (session goals), compaction-clean, model-failover
 infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
 .agents/skills/           agent skills (.claude/skills/* are symlinks to them, for Claude Code)
 ```
@@ -472,7 +472,7 @@ there instead of to the ChatGPT subscription. Log in once with `/login` → Open
 `https://opencode.ai/zen/go/v1`) is the default provider and model, and
 `modelThinkingLevels` pins it to `high`. The credential comes from `auth.json`
 (`/login`), so a new machine needs that login once before the default model will answer.
-`byteplus/deepseek-v4-1-flash-260910` (BytePlus Ark,
+`byteplus/deepseek-v4-1-flash-261017` (BytePlus Ark,
 `https://ark.ap-southeast.bytepluses.com/api/v3`) stays configured as an alternative
 model. Ark takes a reasoning-effort knob (`supportsReasoningEffort`), so `medium` is a real
 step there and pi does not clamp it away; `modelThinkingLevels` keeps that model on
@@ -545,10 +545,12 @@ Skills are provided by those packages, not vendored here.
 
 ## OpenCode
 
-`install.sh opencode` links three plugins into `~/.config/opencode/plugins/` and lists
-them under `plugins` in `~/.config/opencode/opencode.json`. The first two have a server
-entry (`index.ts`), a shared RPC definition (`rpc.ts`) and a TUI entry (`tui.tsx`).
-OpenCode loads the TypeScript directly, so there is no build step.
+`install.sh opencode` links four plugins into `~/.config/opencode/plugins/` and lists
+them under `plugins` in `~/.config/opencode/opencode.json`. The `loop` and `goal` plugins
+have a server entry (`index.ts`), a shared RPC definition (`rpc.ts`) and a TUI entry
+(`tui.tsx`). OpenCode loads the TypeScript directly, so there is no build step. The same
+block sets `experimental.todo` to `true`, which gives models the `todowrite` tool and
+shows the task list in the session and the sidebar.
 
 - `loop` ports pi's `/loop`: `/loop [5m] <prompt>`, `/loop status`, `/loop stop`, and
   the `schedule_wakeup`, `loop_start`, `loop_stop` tools. One interval loop or one
@@ -575,6 +577,19 @@ OpenCode loads the TypeScript directly, so there is no build step.
   the result into the first content delta. A tag split across chunks still matches. Any
   line it cannot parse passes through unchanged, so a provider change degrades to "no
   fix", never to a broken compaction.
+- `model-failover` adds one `auto/deepseek-v4.1-flash` model, named "DeepSeek V4.1 Flash"
+  on the provider "Auto". It starts on the route it lists first, and it repeats a rejected request on
+  each later route in turn. `install.sh opencode` writes this order into `options.routes`:
+  `opencode/deepseek-v4.1-flash-free`, then `opencode-go/deepseek-v4.1-flash`, then
+  `byteplus/deepseek-v4-1-flash-261017`. A request that fails with 401, 402, 403, 408,
+  429, 500, 502, 503 or 504 moves to the next route. It does not switch the session, and
+  it never repeats a partial response. The credential for each later route comes from
+  `providers.<id>.settings.apiKey` in `~/.config/opencode/opencode.json`, so
+  `byteplus` needs `ARK_API_KEY` (or a literal `apiKey`) or the plugin skips that route.
+  `opencode-go` falls back to the key in `~/.pi/agent/auth.json`. Each decision goes to
+  `~/.local/state/opencode-model-failover.log`. `install.sh opencode` sets this model as
+  the default `model` in `~/.config/opencode/opencode.json`, so start the plugin block
+  below only after the plugin resolves.
 
 The TUI runs in a separate process from the server, so the `loop` and `goal` server
 plugins each register an RPC (`gery.loop`, `gery.goal`) and the TUI reads state there.

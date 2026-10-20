@@ -13,7 +13,7 @@
   "quietStartup": true,
   "defaultThinkingLevel": "high",
   "modelThinkingLevels": {
-    "byteplus/deepseek-v4-1-flash-260910": "medium",
+    "byteplus/deepseek-v4-1-flash-261017": "medium",
     "openai-codex/gpt-6-luna": "medium",
     "opencode-go/deepseek-v4.1-flash": "high"
   },
@@ -32,7 +32,7 @@
     "openai-codex/gpt-6-astra",
     "openai-codex/gpt-6-luna",
     "openai-codex/gpt-6.1-sol",
-    "byteplus/deepseek-v4-1-flash-260910"
+    "byteplus/deepseek-v4-1-flash-261017"
   ],
   "tuiMode": "fullscreen",
   "fullscreenExitOutput": "resume-hint",

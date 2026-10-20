@@ -179,20 +179,44 @@ if [ "$what" = all ] || [ "$what" = pi ]; then
 fi
 
 if [ "$what" = all ] || [ "$what" = opencode ]; then
-  say "opencode plugins (loop timers, session goals, compaction tags, TUI status)"
+  say "opencode plugins (loop timers, session goals, compaction tags, model failover, TUI status)"
   OC="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
   mkdir -p "$OC/plugins"
-  for p in loop goal compaction-clean; do link "$REPO/opencode/plugins/$p" "$OC/plugins/$p"; done
+  # A machine where ~/.config/opencode/plugins is already a symlink to this repo's
+  # plugins dir shows every plugin without a per-plugin link, and link() would move
+  # the real plugin dir aside and leave a dangling link in its place.
+  if [ "$(cd "$OC/plugins" && pwd -P)" != "$(cd "$REPO/opencode/plugins" && pwd -P)" ]; then
+    for p in loop goal compaction-clean model-failover; do link "$REPO/opencode/plugins/$p" "$OC/plugins/$p"; done
+  fi
   C="$OC/opencode.json"; [ -f "$C" ] || echo '{}' > "$C"
+  MODEL="auto/deepseek-v4.1-flash"
   # Drop any managed entry under plugins/ first, then re-add all, so this is idempotent.
-  jq --arg dir "$OC/plugins" '
+  # model-failover takes an object entry, because it reads its route order from options.
+  # The default model is the failover model, so this block owns it too.
+  # experimental.todo gives models the todowrite tool and shows the task list in the TUI.
+  jq --arg dir "$OC/plugins" --arg log "$HOME/.local/state/opencode-model-failover.log" --arg model "$MODEL" '
+    .model = $model |
+    .experimental.todo = true |
     .plugins = (
-      (((.plugins // []) | map(select((type == "string" and startswith($dir + "/")) | not)))
-       + [$dir + "/loop", $dir + "/goal", $dir + "/compaction-clean"])
+      (((.plugins // []) | map(select(
+          ((type == "string") and startswith($dir + "/"))
+          or ((type == "object") and (.package | type == "string") and (.package | startswith($dir + "/")))
+          | not)))
+       + [$dir + "/loop", $dir + "/goal", $dir + "/compaction-clean",
+          {package: ($dir + "/model-failover"), options: {
+            logFile: $log,
+            routes: [
+              {providerID: "opencode", modelID: "deepseek-v4.1-flash-free"},
+              {providerID: "opencode-go", modelID: "deepseek-v4.1-flash"},
+              {providerID: "byteplus", modelID: "deepseek-v4-1-flash-261017"}
+            ]
+          }}])
       | unique
     )
   ' "$C" > "$C.tmp" && mv "$C.tmp" "$C"
-  echo "   linked $OC/plugins/{loop,goal,compaction-clean}; listed in $C"
+  echo "   linked $OC/plugins/{loop,goal,compaction-clean,model-failover}; listed in $C"
+  echo "   default model: $MODEL (set in $C)"
+  echo "   todo lists: enabled (experimental.todo in $C)"
   echo "   OpenCode reloads config live; restart the service if a plugin does not appear"
 fi
 

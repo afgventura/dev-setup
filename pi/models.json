@@ -6,7 +6,7 @@
       "authHeader": true,
       "models": [
         {
-          "id": "deepseek-v4-1-flash-260910",
+          "id": "deepseek-v4-1-flash-261017",
           "name": "DeepSeek V4.1 Flash (BytePlus Ark)",
           "reasoning": true,
           "input": [
