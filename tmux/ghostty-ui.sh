@@ -8,7 +8,7 @@
 set -u
 TMUX_BIN=/opt/homebrew/bin/tmux
 CFG="$HOME/.config/tmux"
-DEFAULT_SIDEBAR_WIDTH=72
+DEFAULT_SIDEBAR_WIDTH=40
 
 # Real session (persistent).
 "$TMUX_BIN" has-session -t main 2>/dev/null || "$TMUX_BIN" new-session -d -s main -c "$HOME"

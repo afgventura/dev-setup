@@ -64,7 +64,7 @@ Codex snippet, and copies the pi config. Re-run after `git pull`.
 
 Two tmux servers. `main` (default socket) holds your real tabs. `ui`
 (`-L ui`, config `tmux/ui.conf`) is throwaway chrome: a `@sidebar_width`-column
-pane (72 by default) running `sidebar.sh` (fzf as a pure display) next to a pane
+pane (40 by default) running `sidebar.sh` (fzf as a pure display) next to a pane
 that just attaches `main`.
 It has no prefix, so every `C-b …` sequence Ghostty's ⌘ keybinds emit passes
 straight through to `main`. When the last Ghostty client detaches, `ui` kills
@@ -132,7 +132,7 @@ infra/remote-pi-relay/    Terraform: our Remote Pi relay on Cloud Run (Jakarta)
   with no way to tell the two jobs apart. As a side effect the log's first column
   is the script, not the interpreter.
 
-- Sidebar width: `@sidebar_width` in `tmux/ui.conf` (72) — the one place;
+- Sidebar width: `@sidebar_width` in `tmux/ui.conf` (40) — the one place;
   `ghostty-ui.sh` (initial split), `sidebar-redraw.sh` (resize on attach/resize,
   clamped to leave ~40 columns) and `sidebar-list.sh` (row padding/truncation)
   all read it. `SIDEBAR_WIDTH=<n>` in the environment overrides it for the list

@@ -20,7 +20,7 @@ exec 2>/dev/null   # never let a stray error reach tmux/fzf output
 # after a width change. SIDEBAR_WIDTH still overrides, for tests.
 W=${SIDEBAR_WIDTH:-}
 if [ -z "$W" ]; then W=$(/opt/homebrew/bin/tmux -L ui show-options -gv @sidebar_width); fi
-case "$W" in '' | *[!0-9]*) W=72 ;; esac
+case "$W" in '' | *[!0-9]*) W=40 ;; esac
 PAD=$((W - 7))          # fzf left margin 2 + "  " indent + marker + " " + name, one col spare
 DIM=$'\e[2m'; RST=$'\e[0m'
 

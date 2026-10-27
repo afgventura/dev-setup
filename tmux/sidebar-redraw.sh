@@ -41,7 +41,7 @@ if [ -n "$sidebar" ] && [ -n "$content" ]; then
   # @sidebar_width is the single knob (ui.conf). Clamp so a narrow window keeps
   # at least ~40 columns for the content instead of letting the sidebar win.
   want=$("$TMUX_BIN" -L ui show-options -gv @sidebar_width)
-  case "$want" in '' | *[!0-9]*) want=72 ;; esac
+  case "$want" in '' | *[!0-9]*) want=40 ;; esac
   win=$("$TMUX_BIN" -L ui display -p -t ui '#{window_width}')
   case "$win" in '' | *[!0-9]*) win=0 ;; esac
   [ "$win" -gt 0 ] && [ "$want" -gt $((win - 40)) ] && want=$((win - 40))
